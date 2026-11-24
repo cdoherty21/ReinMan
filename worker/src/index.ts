@@ -112,6 +112,38 @@ async function dispatchWorkflow(env: Env, workflow: string): Promise<string> {
   return `dispatch ${response.status}`;
 }
 
+/** Start a workflow at most once per ``cooldown`` (an SQLite modifier like '-20 hours').
+ *  The claim is written to job_runs first, so overlapping cron ticks can't both start it. */
+async function dispatchOnce(env: Env, job: string, workflow: string, cooldown: string): Promise<string> {
+  if (!env.GITHUB_TOKEN || !env.GITHUB_REPO) return "dispatch not configured";
+  const claim = await first<{ id: number }>(env.DB,
+    `INSERT INTO job_runs (job, status)
+     SELECT ?, 'running' WHERE NOT EXISTS (
+       SELECT 1 FROM job_runs WHERE job=? AND status IN ('ok','running')
+       AND started_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now', ?)
+     ) RETURNING id`, job, job, cooldown);
+  if (!claim) return "already started";
+  let result = "dispatch failed";
+  try {
+    result = await dispatchWorkflow(env, workflow);
+  } catch (error) {
+    console.error(`Could not start ${workflow}`, error);
+  } finally {
+    await env.DB.prepare(`UPDATE job_runs SET finished_at=${NOW_SQL}, status=?, details=? WHERE id=?`)
+      .bind(result === "dispatch 204" ? "ok" : "error", result, claim.id).run();
+  }
+  return result;
+}
+
+/** Daily cycle ~6:40am ET (10:40 UTC) and weekly learning Mondays ~5:20am ET (09:20 UTC). */
+export function scheduledJobsDue(when: Date): { daily: boolean; learn: boolean } {
+  const h = when.getUTCHours(), m = when.getUTCMinutes();
+  return {
+    daily: h === 10 && m >= 40 && m < 55,
+    learn: when.getUTCDay() === 1 && h === 9 && m >= 20 && m < 35,
+  };
+}
+
 async function dispatchDocuments(env: Env): Promise<string> {
   const pending = await first(env.DB, "SELECT id FROM documents WHERE status='pending' LIMIT 1");
   if (!pending) return "no pending documents";
@@ -705,8 +737,14 @@ export default {
 
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
     const locked = await lockDue(env.DB);
-    const dispatch = await dispatchMonitor(env, new Date(controller.scheduledTime));
-    await dispatchDocuments(env);
+    const when = new Date(controller.scheduledTime);
+    const due = scheduledJobsDue(when);
+    const dispatch = {
+      monitor: await dispatchMonitor(env, when),
+      documents: await dispatchDocuments(env),
+      daily: due.daily ? await dispatchOnce(env, "daily_dispatch", "reinman-daily.yml", "-20 hours") : "not due",
+      learn: due.learn ? await dispatchOnce(env, "learn_dispatch", "reinman-learn.yml", "-6 days") : "not due",
+    };
     await env.DB.prepare("INSERT INTO job_runs (job, finished_at, status, details) VALUES ('worker_cron', strftime('%Y-%m-%dT%H:%M:%fZ','now'), 'ok', ?)")
       .bind(JSON.stringify({ locked, dispatch }))
       .run();

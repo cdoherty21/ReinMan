@@ -3,8 +3,14 @@
 name: reinman-learn
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: Train even if a model was trained in the last 6 days
+        type: boolean
+        default: false
+  # The Worker starts this Mondays ~5:23am ET; this later schedule is a backup.
   schedule:
-    - cron: "23 9 * * 1"    # Mondays
+    - cron: "53 10 * * 1"
 concurrency:
   group: reinman-db-writer
   cancel-in-progress: false
@@ -28,5 +34,5 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12", cache: pip, cache-dependency-path: engine/pyproject.toml }
       - run: pip install -e .
-      - run: reinman train
+      - run: reinman train ${{ inputs.force && '--force' || '' }}
       - run: reinman backtest

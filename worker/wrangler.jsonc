@@ -31,7 +31,7 @@
     "GITHUB_REPO": "cdoherty21/ReinMan",
     "GITHUB_WORKFLOW": "reinman-monitor.yml",
     "GITHUB_REF": "main",
-    "DISPATCH_EVERY_MIN": "15"
+    "DISPATCH_EVERY_MIN": "60"
   },
   "keep_vars": true,
   "observability": { "enabled": true }

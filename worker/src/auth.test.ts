@@ -33,3 +33,13 @@ describe("auth", () => {
     expect(readCookie(req, "reinman_session")).toBe("xyz.1");
   });
 });
+
+import { scheduledJobsDue } from "./index";
+describe("worker clock", () => {
+  it("starts the daily cycle around 6:40am ET and learning on Monday mornings", () => {
+    expect(scheduledJobsDue(new Date("2026-11-24T10:40:00Z"))).toEqual({ daily: true, learn: false });
+    expect(scheduledJobsDue(new Date("2026-11-24T10:55:00Z")).daily).toBe(false);
+    expect(scheduledJobsDue(new Date("2026-11-23T09:25:00Z"))).toEqual({ daily: false, learn: true }); // Monday
+    expect(scheduledJobsDue(new Date("2026-11-24T09:25:00Z")).learn).toBe(false); // Tuesday
+  });
+});

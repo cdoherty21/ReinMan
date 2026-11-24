@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import re
 import sys
 import traceback
@@ -203,6 +204,30 @@ def daily(db: Database) -> dict:
     return out
 
 
+def ran_recently(db: Database, job_name: str, hours: float) -> bool:
+    since = (datetime.fromisoformat(now_iso().replace("Z", "+00:00")) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S")
+    return bool(db.scalar("SELECT EXISTS(SELECT 1 FROM job_runs WHERE job=? AND status='ok' AND started_at>=?)",
+                          [job_name, since]))
+
+
+def guarded(db: Database, job_name: str, hours: float, force: bool, fn):
+    """Run ``fn`` as ``job_name`` unless it already succeeded within ``hours`` (both the
+    Worker's clock and GitHub's backup schedule may start the same job)."""
+    if not force and ran_recently(db, job_name, hours):
+        return {"skipped": f"{job_name} already ran in the last {hours:g} hours"}
+    return job(db, job_name, fn)
+
+
+def documents_ready(db: Database) -> dict:
+    """Print how many documents are ready to scan; also expose it to GitHub Actions."""
+    n = documents.ready_count(db)
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a") as fh:
+            fh.write(f"ready={n}\n")
+    return {"ready": n}
+
+
 def backfill(db: Database, start: str, end: str) -> dict:
     n = 0
     sources = configured_sources()
@@ -218,8 +243,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="reinman", description="Rein Man — The Intelligence Behind the Odds.")
     ap.add_argument("--db", help="sqlite:///path.db or d1 (default: $REINMAN_DB)")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for c in ("init", "monitor", "daily", "lock", "grade", "stats", "train", "backtest"):
+    for c in ("init", "monitor", "lock", "grade", "stats", "backtest", "documents-ready"):
         sub.add_parser(c)
+    for c in ("daily", "train"):
+        sub.add_parser(c).add_argument("--force", action="store_true", help="run even if it ran recently")
     sub.add_parser("documents").add_argument("--rescan", action="store_true")
     for c in ("ingest", "results", "predict", "source-check"):
         s = sub.add_parser(c)
@@ -253,7 +280,9 @@ def main(argv=None) -> int:
     ensure_baseline(db)
     d = getattr(a, "date", None) or today()
     fn = {
-        "monitor": lambda: monitor(db), "daily": lambda: daily(db),
+        "monitor": lambda: monitor(db),
+        "daily": lambda: guarded(db, "daily_cycle", 12, a.force, lambda: daily(db)),
+        "documents-ready": lambda: documents_ready(db),
         "ingest": lambda: job(db, "ingest", do_ingest, db, d),
         "results": lambda: job(db, "results", do_results, db, d),
         "predict": lambda: job(db, "predict", predict.predict_date, db, d),
@@ -261,7 +290,7 @@ def main(argv=None) -> int:
         "documents": lambda: job(db, "documents", documents.process_queue, db, getattr(a, "rescan", False)),
         "grade": lambda: job(db, "grade", grading.grade_all, db),
         "stats": lambda: job(db, "stats", performance.refresh_stats, db),
-        "train": lambda: job(db, "train", train.train_and_maybe_promote, db),
+        "train": lambda: guarded(db, "train", 24 * 6, a.force, lambda: train.train_and_maybe_promote(db)),
         "backtest": lambda: job(db, "backtest", backtest.run, db),
         "backfill": lambda: backfill(db, a.start, a.end),
         "import": lambda: job(db, "import", do_import, db, a.path),

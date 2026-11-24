@@ -382,12 +382,20 @@ def _store_program_cards(db: Database, cards: list[dict]) -> tuple[list[str], se
     return imported, race_ids
 
 
+# Documents ready to scan: new uploads, plus ones that were waiting for a race card that now exists.
+_READY = ("d.status='pending' OR (d.status='waiting' AND EXISTS ("
+          "SELECT 1 FROM races r JOIN runners rn ON rn.race_id=r.race_id "
+          "WHERE r.track_id=d.track_id AND r.race_date=d.race_date "
+          "AND r.race_number=json_extract(d.summary, '$.waiting_for_race')))")
+
+
+def ready_count(db: Database) -> int:
+    """How many documents a scan would process right now (cheap; no PDF tools needed)."""
+    return int(db.scalar(f"SELECT COUNT(*) FROM documents d WHERE {_READY}") or 0)
+
+
 def process_pending(db: Database, limit: int = 20, touched: set[str] | None = None) -> dict:
-    docs = db.query(
-        "SELECT d.* FROM documents d WHERE d.status='pending' OR (d.status='waiting' AND EXISTS ("
-        "SELECT 1 FROM races r JOIN runners rn ON rn.race_id=r.race_id "
-        "WHERE r.track_id=d.track_id AND r.race_date=d.race_date "
-        "AND r.race_number=json_extract(d.summary, '$.waiting_for_race'))) ORDER BY d.id LIMIT ?", [limit])
+    docs = db.query(f"SELECT d.* FROM documents d WHERE {_READY} ORDER BY d.id LIMIT ?", [limit])
     done = errors = 0
     for doc in docs:
         try:

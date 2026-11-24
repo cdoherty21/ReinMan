@@ -4,8 +4,10 @@
 name: reinman-monitor
 on:
   workflow_dispatch:
+  # Normally started every 15 minutes by the Worker's clock (GitHub's own schedule is
+  # unreliable); this hourly schedule is only a backup.
   schedule:
-    - cron: "7,37 14-23,0-5 * * *"
+    - cron: "52 14-23,0-5 * * *"
 concurrency:
   group: reinman-db-writer
   cancel-in-progress: false
@@ -30,6 +32,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12", cache: pip, cache-dependency-path: engine/pyproject.toml }
-      - run: (command -v pdftotext && command -v tesseract) || (sudo apt-get update && sudo apt-get install -y poppler-utils tesseract-ocr)
       - run: pip install -e .
+      # The PDF/OCR tools take about a minute to install, so only when documents are waiting.
+      - id: docs
+        run: reinman documents-ready
+      - if: steps.docs.outputs.ready != '0'
+        run: (command -v pdftotext && command -v tesseract) || (sudo apt-get update && sudo apt-get install -y poppler-utils tesseract-ocr)
       - run: reinman monitor

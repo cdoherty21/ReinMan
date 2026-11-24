@@ -6,8 +6,9 @@ on:
         description: Scan existing uploads again
         type: boolean
         default: false
+  # The Worker starts a scan within 5 minutes of an upload; this is a backup.
   schedule:
-    - cron: "17 * * * *"
+    - cron: "17 */3 * * *"
 concurrency:
   group: reinman-db-writer
   cancel-in-progress: false
@@ -15,6 +16,8 @@ permissions:
   contents: read
 jobs:
   scan:
+    # Scheduled runs stay off until the repository variable REINMAN_ENABLED is "true".
+    if: github.event_name == 'workflow_dispatch' || vars.REINMAN_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults: { run: { working-directory: engine } }
@@ -27,9 +30,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12", cache: pip, cache-dependency-path: engine/pyproject.toml }
-      - run: (command -v pdftotext && command -v tesseract) || (sudo apt-get update && sudo apt-get install -y poppler-utils tesseract-ocr)
       - run: pip install -e .
+      # The PDF/OCR tools take about a minute to install, so only when documents are waiting.
+      - id: docs
+        run: reinman documents-ready
+      - if: steps.docs.outputs.ready != '0' || inputs.rescan == true
+        run: (command -v pdftotext && command -v tesseract) || (sudo apt-get update && sudo apt-get install -y poppler-utils tesseract-ocr)
       - if: inputs.rescan == true
         run: reinman documents --rescan
-      - if: inputs.rescan != true
+      - if: inputs.rescan != true && steps.docs.outputs.ready != '0'
         run: reinman documents

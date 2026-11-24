@@ -71,13 +71,20 @@ asks automated clients to identify themselves.
 
 Workflows must be on the **default branch** for schedules and dispatch to run. Scheduled data jobs stay off until you add the repository **variable** `REINMAN_ENABLED` = `true` (Settings → Secrets and variables → Actions → Variables) — do that once the racing-data secrets are in place.
 
-## 4. Reliable race-day clock (Worker → GitHub)
-Create a fine-grained GitHub token with **Actions: Read and write** on this repository only:
-```bash
-npx wrangler secret put GITHUB_TOKEN -c worker/wrangler.jsonc
-```
-and set `GITHUB_REPO` (`cdoherty21/ReinMan`) and `GITHUB_REF` in `worker/wrangler.jsonc` vars.
-The Worker then dispatches `reinman-monitor` every 15 minutes from 10am to 2am ET.
+## 4. The clock (Worker → GitHub) — required
+GitHub's own schedules are unreliable (often hours late or skipped), so the Worker's
+5-minute cron starts the jobs: the race-day monitor hourly (10am–2am ET; the free PuntersEdge budget allows a fresh board read about every 45 minutes, and a private repo has 2,000 free Actions minutes a month), a
+document scan within 5 minutes of an upload, the daily cycle at ~6:40am ET, and weekly
+learning on Monday mornings. Each start is claimed in `job_runs`, so it happens once.
+GitHub's schedules remain as backups, and the daily/learning jobs skip themselves if they
+already ran.
+
+Create a fine-grained GitHub token (github.com → Settings → Developer settings →
+Fine-grained tokens): repository access **only** ReinMan, permission **Actions: Read and
+write**, nothing else. Add it as the Worker secret `GITHUB_TOKEN` (Cloudflare → rein-man →
+Settings → Variables and Secrets, type Secret). `GITHUB_REPO` is already set in
+`worker/wrangler.jsonc`. Check it works on the Performance page → Automation log
+(`worker_cron` entries show `dispatch 204`).
 
 ## 5. Build the historical database (Phase 2)
 ```bash

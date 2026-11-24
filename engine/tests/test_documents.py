@@ -187,3 +187,20 @@ Reported scratch: Race 3 Quiet Harbor
     assert db.scalar("SELECT COUNT(*) FROM runners") == 5
     assert db.scalar("SELECT scratched FROM runners WHERE program_number='3'") == 0
     assert db.scalar("SELECT COUNT(*) FROM document_notes WHERE kind='scratch report'") == 1
+
+
+def test_ready_count_and_job_guards(db, monkeypatch, tmp_path):
+    from reinman import cli
+    assert documents.ready_count(db) == 0
+    _upload(db, "nothing to see here, just a note about the weather")
+    assert documents.ready_count(db) == 1
+    out = tmp_path / "gh_output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    assert cli.documents_ready(db) == {"ready": 1}
+    assert out.read_text() == "ready=1\n"
+    calls = []
+    first = cli.guarded(db, "daily_cycle", 12, False, lambda: calls.append(1) or {"ran": True})
+    assert first == {"ran": True}
+    assert "skipped" in cli.guarded(db, "daily_cycle", 12, False, lambda: calls.append(2))
+    assert cli.guarded(db, "daily_cycle", 12, True, lambda: calls.append(3) or {"ran": True}) == {"ran": True}
+    assert calls == [1, 3]
