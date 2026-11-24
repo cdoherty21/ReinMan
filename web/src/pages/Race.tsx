@@ -81,7 +81,7 @@ export function Race({ id }: { id: string }) {
       </div>
 
       {!p ? (
-        <div className="empty">Rein Man has not recorded an analysis for this race{race.status === "official" ? " (no selection was recorded before post)" : " yet"}.</div>
+        <div className="empty">{!race.post_time ? "Pre-race picks need a verified post time. The entries and available evidence are below." : "Rein Man has not recorded an analysis for this race."}</div>
       ) : (
         <>
           <section className="take">
@@ -212,9 +212,9 @@ export function Race({ id }: { id: string }) {
         <section className="card">
           <h2>Entries</h2>
           <table className="data">
-            <thead><tr><th>Program</th><th>Horse</th><th>Morning line</th></tr></thead>
+            <thead><tr><th>Program</th><th>Horse</th><th>Jockey</th><th>Trainer</th><th>Weight</th><th>Morning line</th></tr></thead>
             <tbody>{runners.map((r) => (
-              <tr key={r.program_number}><td>{r.program_number}</td><td>{r.horse_name}</td><td>{odds(r.ml_odds)}</td></tr>
+              <tr key={r.program_number}><td>{r.program_number}</td><td>{r.horse_name}</td><td>{r.jockey_name ?? "—"}</td><td>{r.trainer_name ?? "—"}</td><td>{r.weight ?? "—"}</td><td>{odds(r.ml_odds)}</td></tr>
             ))}</tbody>
           </table>
         </section>

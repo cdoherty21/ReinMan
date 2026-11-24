@@ -143,3 +143,22 @@ def test_program_reuses_card_when_track_was_stored_under_old_vendor_code(db):
     doc_id = _upload(db, PROGRAM)
     summary = documents.scan(db, {"id": doc_id, "program_race_ids": linked}, PROGRAM)
     assert summary["races_linked"] == ["FINGER_LAKES-20261126-3"]
+
+
+def test_csv_entry_table_creates_race_and_adds_missing_fields(db):
+    head = "Track,Race Date,Race,Program,Horse,Post Time,Distance,Surface,Jockey,Trainer,Weight,Morning Line\n"
+    rows = (
+        "Finger Lakes,2026-11-26,3,1,Morning Thunder,1:00 PM,6 furlongs,Dirt,A Rider,B Trainer,120,5/2\n"
+        "Finger Lakes,2026-11-26,3,2,Silver Comet,1:00 PM,6 furlongs,Dirt,C Rider,D Trainer,122,3/1\n"
+    )
+    doc_id = _upload(db, head + rows, filename="card.csv")
+    assert documents.process_pending(db) == {"processed": 1, "errors": 0}
+    race = db.one("SELECT post_time,distance_yards,surface FROM races")
+    assert race == {"post_time": "2026-11-26T18:00:00.000Z", "distance_yards": 1320, "surface": "D"}
+    assert db.scalar("SELECT weight FROM runners WHERE program_number='1'") == 120
+    assert "FL-20261126-3" in db.scalar("SELECT summary FROM documents WHERE id=?", [doc_id])
+
+    _upload(db, head + rows.replace("120,5/2", "125,9/2"), filename="update.csv")
+    documents.process_pending(db)
+    assert db.scalar("SELECT COUNT(*) FROM races") == 1
+    assert db.scalar("SELECT weight FROM runners WHERE program_number='1'") == 120
