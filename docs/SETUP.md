@@ -13,13 +13,23 @@ npx wrangler secret put REINMAN_PASSWORD -c worker/wrangler.jsonc   # your login
 npx wrangler secret put SESSION_SECRET  -c worker/wrangler.jsonc   # random 32+ chars: openssl rand -hex 32
 npm run deploy                              # → https://rein-man.<your-subdomain>.workers.dev
 ```
-**Login is currently off** (`AUTH_DISABLED: "true"` in `worker/wrangler.jsonc`): anyone with the
-link can use the app, including adding entries to the real-wager log. To require a password
-again, set `AUTH_DISABLED` to `"false"`, add the `REINMAN_PASSWORD` and `SESSION_SECRET`
-secrets, and redeploy. With login on, Rein Man uses a signed, HttpOnly, SameSite=Strict
-cookie, throttles login attempts (8 per 15 min per IP) and fails closed if either secret is
-missing. Cloudflare Access (Zero Trust, free) is an alternative that needs no password:
-it emails you a one-time code.
+**Login:** username + password. Set three Worker secrets (Cloudflare → Workers & Pages →
+rein-man → Settings → Variables and Secrets, type **Secret**): `REINMAN_USERNAME`,
+`REINMAN_PASSWORD` and `SESSION_SECRET` (a long random string you never type). Until all
+three exist, nobody can log in. Sessions last 30 days in a signed, HttpOnly,
+SameSite=Strict cookie; failed logins are throttled (8 per 15 min per IP). Setting the
+`AUTH_DISABLED` var to `"true"` removes the login entirely (not recommended: the free
+PuntersEdge licence is personal use, and uploads would be open to anyone).
+
+## Documents
+The **Documents** page uploads PDFs (with real text), HTML, TXT, CSV or Rein Man JSON. The
+browser extracts the text; the hourly monitor job (or `reinman documents`) scans it, links it
+to stored races by horse names, keeps each horse's passage for the race page, and extracts
+workouts (standard "date track distance condition time grade rank/field" lines, which feed
+the model's workout features) and payout lines. JSON in the canonical format is imported
+directly. Mark Equibase research files **Research only**: they are scanned and kept, but
+never shown on race pages or used for live picks. Scanned images (no text layer) aren't
+supported yet.
 
 ## 2. Racing data
 No live source is connected (no free, permitted U.S. feed exists — see

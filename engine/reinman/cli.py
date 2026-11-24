@@ -24,7 +24,7 @@ import traceback
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from . import backtest, grading, ingest, performance, predict, train
+from . import backtest, documents, grading, ingest, performance, predict, train
 from .db import Database, SQLiteDatabase, connect
 from .registry import ensure_baseline
 from .sources import configured_sources, get_source
@@ -178,6 +178,7 @@ def monitor(db: Database) -> dict:
     out["results"] = ({"official": 0, "deferred_to": "daily"} if free else
                       job(db, "results", do_results, db, d, sources))
     out["grade_pre"] = job(db, "lock", predict.lock_due, db)
+    out["documents"] = job(db, "documents", documents.process_pending, db)
     out["predict"] = job(db, "predict", predict.predict_date, db, d, out["ingest"]["changed_races"])
     out["grade"] = job(db, "grade", grading.grade_all, db)
     if out["results"]["official"] or out["grade"]["predictions_graded"]:
@@ -189,6 +190,7 @@ def daily(db: Database) -> dict:
     d = today()
     out = {}
     sources = automatic_sources(db)
+    out["documents"] = job(db, "documents", documents.process_pending, db)
     for day in (_shift(d, -1), d):
         out[f"results_{day}"] = job(db, "results", do_results, db, day, sources)
     for day in (d, _shift(d, 1)):
@@ -215,7 +217,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="reinman", description="Rein Man — The Intelligence Behind the Odds.")
     ap.add_argument("--db", help="sqlite:///path.db or d1 (default: $REINMAN_DB)")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for c in ("init", "monitor", "daily", "lock", "grade", "stats", "train", "backtest"):
+    for c in ("init", "monitor", "daily", "lock", "grade", "stats", "train", "backtest", "documents"):
         sub.add_parser(c)
     for c in ("ingest", "results", "predict", "source-check"):
         s = sub.add_parser(c)
@@ -254,6 +256,7 @@ def main(argv=None) -> int:
         "results": lambda: job(db, "results", do_results, db, d),
         "predict": lambda: job(db, "predict", predict.predict_date, db, d),
         "lock": lambda: job(db, "lock", predict.lock_due, db),
+        "documents": lambda: job(db, "documents", documents.process_pending, db),
         "grade": lambda: job(db, "grade", grading.grade_all, db),
         "stats": lambda: job(db, "stats", performance.refresh_stats, db),
         "train": lambda: job(db, "train", train.train_and_maybe_promote, db),

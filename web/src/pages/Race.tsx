@@ -34,7 +34,9 @@ type RaceResp = {
   payoffs: { wager_type: string; wager_name: string | null; winning_numbers: string; payoff_amount: number | null; base_amount: number | null }[];
   changes: { change_type: string | null; text: string; seen_at: string }[];
   grade: null | { top1_finish: number | null; winner_rank: number | null; status: string };
+  docNotes?: DocNote[];
 };
+type DocNote = { id: number; document_id: number; program_number: string | null; horse_name: string | null; kind: string; text: string; filename: string; uploaded_at: string };
 
 const FACTOR_NAMES: Record<string, string> = {
   morning_line: "Morning line", horse_history: "Horse history", jockey_trainer: "Jockey/trainer stats",
@@ -52,6 +54,7 @@ export function Race({ id }: { id: string }) {
   const byProg = new Map(runners.map((r) => [r.program_number, r]));
   const name = (prog: string | null) => (prog ? `#${prog} ${byProg.get(prog)?.horse_name ?? ""}` : "—");
   const scratched = runners.filter((r) => r.scratched);
+  const notesFor = (prog: string) => (data.docNotes ?? []).filter((n) => n.program_number === prog);
   const isLocked = data.lock && p && data.lock.prediction_id === p.prediction_id;
   return (
     <>
@@ -124,7 +127,7 @@ export function Race({ id }: { id: string }) {
                             {x.program_number === p.dark_horse && <span className="tag dark">Dark horse</span>}
                             {r?.scratched ? <span className="tag scr">Scratched</span> : null}
                           </td>
-                          <td className="hide-sm">{r?.jockey_name ?? "—"}</td>
+                          <td className="hide-sm">{r?.jockey_name ?? "—"}{notesFor(x.program_number).length > 0 && <span className="tag value" title="Notes from your documents">doc</span>}</td>
                           <td className="hide-sm">{r?.trainer_name ?? "—"}</td>
                           <td className="num hide-sm">{odds(r?.ml_odds)}</td>
                           <td className="num">{odds(x.odds_used)}{x.odds_source === "live" ? "" : x.odds_used != null ? <sup title="morning line">ML</sup> : ""}</td>
@@ -148,6 +151,18 @@ export function Race({ id }: { id: string }) {
                                     {x.factors.map((f, i) => <li key={i} className={f.startsWith("+") ? "pos" : f.startsWith("−") ? "neg" : ""}>{f}</li>)}
                                   </ul>
                                 </div>
+                                {notesFor(x.program_number).length > 0 && (
+                                  <div className="doc-notes">
+                                    <h4>From your documents</h4>
+                                    {notesFor(x.program_number).map((n) => (
+                                      <p key={n.id} className="small">
+                                        <span className="tag value">{n.kind}</span>{" "}
+                                        <span className="mono pre">{n.text}</span>
+                                        <span className="muted"> · {n.filename}</span>
+                                      </p>
+                                    ))}
+                                  </div>
+                                )}
                                 <div>
                                   <h4>Connections</h4>
                                   <p>J: {r?.jockey_name ?? "—"} · T: {r?.trainer_name ?? "—"}</p>

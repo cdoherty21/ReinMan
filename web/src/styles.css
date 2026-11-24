@@ -229,3 +229,10 @@ sup { font-size: 0.6rem; color: var(--ink-3); margin-left: 2px; }
 @media (forced-colors: active) {
   .rm-mark, .conf, .tag { border: 1px solid CanvasText; }
 }
+
+/* ---------- documents ---------- */
+.upload-form { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: flex-end; margin: 0.6rem 0; }
+.upload-form label { display: flex; flex-direction: column; font-size: 0.78rem; color: var(--ink-3); gap: 0.2rem; }
+.upload-form label.check { flex-direction: row; align-items: center; gap: 0.4rem; color: var(--ink-2); font-size: 0.85rem; max-width: 34rem; }
+.doc-notes { grid-column: 1 / -1; border-top: 1px dashed var(--line); padding-top: 0.4rem; }
+.pre { white-space: pre-wrap; }

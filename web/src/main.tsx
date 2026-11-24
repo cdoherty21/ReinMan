@@ -8,6 +8,7 @@ import { Race } from "./pages/Race";
 import { Opportunities } from "./pages/Opportunities";
 import { Performance } from "./pages/Performance";
 import { History } from "./pages/History";
+import { Documents } from "./pages/Documents";
 
 const NAV = [
   ["/", "Today"],
@@ -15,6 +16,7 @@ const NAV = [
   ["/opportunities", "Best Opportunities"],
   ["/performance", "Performance"],
   ["/history", "History"],
+  ["/documents", "Documents"],
 ] as const;
 
 export function Link({ to, children, className }: { to: string; children: React.ReactNode; className?: string }) {
@@ -38,6 +40,7 @@ function Logo({ size = 40 }: { size?: number }) {
 }
 
 function Login({ onDone }: { onDone: () => void }) {
+  const [user, setUser] = useState("");
   const [pw, setPw] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -50,7 +53,7 @@ function Login({ onDone }: { onDone: () => void }) {
           setBusy(true);
           setErr(null);
           try {
-            await api("/api/login", { method: "POST", body: JSON.stringify({ password: pw }) });
+            await api("/api/login", { method: "POST", body: JSON.stringify({ username: user, password: pw }) });
             onDone();
           } catch (x) {
             setErr((x as Error).message || "Sign-in failed");
@@ -62,10 +65,12 @@ function Login({ onDone }: { onDone: () => void }) {
         <Logo size={72} />
         <h1>Rein Man</h1>
         <p className="tagline">The Intelligence Behind the Odds.</p>
+        <label htmlFor="user">Username</label>
+        <input id="user" autoComplete="username" autoCapitalize="none" value={user} onChange={(e) => setUser(e.target.value)} autoFocus />
         <label htmlFor="pw">Password</label>
-        <input id="pw" type="password" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} autoFocus />
+        <input id="pw" type="password" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} />
         {err && <p className="error" role="alert">{err}</p>}
-        <button className="btn primary" disabled={busy || !pw}>{busy ? "Checking…" : "Enter"}</button>
+        <button className="btn primary" disabled={busy || !pw || !user}>{busy ? "Checking…" : "Enter"}</button>
         <p className="muted small">Private handicapping system. Authorized use only.</p>
       </form>
     </main>
@@ -83,6 +88,7 @@ function Shell({ authRequired }: { authRequired: boolean }) {
   else if (path.startsWith("/opportunities")) page = <Opportunities />;
   else if (path.startsWith("/performance")) page = <Performance />;
   else if (path.startsWith("/history")) page = <History />;
+  else if (path.startsWith("/documents")) page = <Documents />;
   else page = <Today />;
   const active = (to: string) => (to === "/" ? path === "/" : path.startsWith(to) || (to === "/cards" && !!raceMatch));
   return (

@@ -4,6 +4,7 @@ import { COOKIE, checkPassword, makeSession, readCookie, sessionCookie, verifySe
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  REINMAN_USERNAME?: string;
   REINMAN_PASSWORD?: string;
   /** "true" turns the password login off: anyone with the link can use the app. */
   AUTH_DISABLED?: string;
@@ -15,6 +16,8 @@ export interface Env {
   DISPATCH_EVERY_MIN?: string;
 }
 
+const MAX_DOC_CHARS = 1_000_000;
+const CHUNK_CHARS = 40_000;
 const NOW_SQL = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 
 const json = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
@@ -180,11 +183,20 @@ const routes: [string, RegExp, Handler][] = [
       const payoffs = await all(env.DB, "SELECT * FROM result_payoffs WHERE race_id = ?", id);
       const changes = await all(env.DB, "SELECT * FROM race_changes WHERE race_id = ? ORDER BY seen_at", id);
       const grade = await first(env.DB, "SELECT * FROM grades WHERE race_id = ?", id);
+      const docNotes = (
+        await all(
+          env.DB,
+          `SELECT n.id, n.document_id, n.program_number, n.horse_name, n.kind, n.text, n.data, d.filename, d.uploaded_at
+           FROM document_notes n JOIN documents d ON d.id = n.document_id
+           WHERE n.race_id = ? AND d.research_only = 0 ORDER BY n.id`,
+          id,
+        )
+      ).map((n) => ({ ...n, data: parseJSON((n as { data: unknown }).data) }));
       if (prediction) {
         (prediction as Record<string, unknown>).pace = parseJSON((prediction as Record<string, unknown>).pace);
         (prediction as Record<string, unknown>).data_notes = parseJSON((prediction as Record<string, unknown>).data_notes);
       }
-      return json({ race, lock, snapshots, prediction, picks, wagers, runners, results, payoffs, changes, grade });
+      return json({ race, lock, snapshots, prediction, picks, wagers, runners, results, payoffs, changes, grade, docNotes });
     },
   ],
   [
@@ -331,6 +343,61 @@ const routes: [string, RegExp, Handler][] = [
       return json({ ok: true });
     },
   ],
+  [
+    "GET",
+    /^\/api\/documents$/,
+    async (_req, env) => {
+      const rows = (
+        await all(
+          env.DB,
+          `SELECT id, uploaded_at, filename, mime, size_bytes, chars, race_date, track_id, research_only, status,
+                  processed_at, summary, error FROM documents ORDER BY id DESC LIMIT 200`,
+        )
+      ).map((d) => ({ ...d, summary: parseJSON((d as { summary: unknown }).summary) }));
+      return json({ rows });
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/documents\/(\d+)$/,
+    async (_req, env, _u, m) => {
+      const doc = await first(env.DB, "SELECT * FROM documents WHERE id = ?", Number(m[1]));
+      if (!doc) return json({ error: "not found" }, 404);
+      const notes = (await all(env.DB, "SELECT * FROM document_notes WHERE document_id = ? ORDER BY id", Number(m[1]))).map(
+        (n) => ({ ...n, data: parseJSON((n as { data: unknown }).data) }),
+      );
+      return json({ doc: { ...doc, summary: parseJSON((doc as { summary: unknown }).summary) }, notes });
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/documents$/,
+    async (req, env) => {
+      const b = (await req.json()) as {
+        filename?: string; mime?: string; size_bytes?: number; text?: string;
+        race_date?: string; track_id?: string; research_only?: boolean;
+      };
+      const text = typeof b.text === "string" ? b.text : "";
+      const filename = String(b.filename || "").slice(0, 200);
+      if (!filename || text.trim().length < 20)
+        return json({ error: "No readable text in this document. Scanned images aren't supported yet." }, 400);
+      if (text.length > MAX_DOC_CHARS) return json({ error: `Document too large (over ${MAX_DOC_CHARS.toLocaleString()} characters).` }, 413);
+      const raceDate = /^\d{4}-\d{2}-\d{2}$/.test(b.race_date ?? "") ? b.race_date : null;
+      const track = /^[A-Za-z0-9_]{1,8}$/.test(b.track_id ?? "") ? b.track_id!.toUpperCase() : null;
+      const ins = await env.DB.prepare(
+        "INSERT INTO documents (filename, mime, size_bytes, chars, race_date, track_id, research_only) VALUES (?,?,?,?,?,?,?)",
+      )
+        .bind(filename, String(b.mime || "").slice(0, 100) || null, Number(b.size_bytes) || null, text.length, raceDate, track, b.research_only ? 1 : 0)
+        .run();
+      const id = ins.meta.last_row_id;
+      const stmts = [];
+      for (let i = 0, seq = 0; i < text.length; i += CHUNK_CHARS, seq++) {
+        stmts.push(env.DB.prepare("INSERT INTO document_chunks (document_id, seq, text) VALUES (?,?,?)").bind(id, seq, text.slice(i, i + CHUNK_CHARS)));
+      }
+      for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
+      return json({ ok: true, id, chunks: stmts.length }, 201);
+    },
+  ],
 ];
 
 async function handleAuth(req: Request, env: Env, url: URL): Promise<Response | null> {
@@ -342,12 +409,16 @@ async function handleAuth(req: Request, env: Env, url: URL): Promise<Response | 
       ip,
     );
     if ((recent?.n ?? 0) >= 8) return json({ error: "Too many attempts. Try again later." }, 429);
-    const body = (await req.json().catch(() => ({}))) as { password?: string };
-    if (!env.SESSION_SECRET || !(await checkPassword(env.REINMAN_PASSWORD, body.password ?? ""))) {
+    const body = (await req.json().catch(() => ({}))) as { username?: string; password?: string };
+    const configured = Boolean(env.REINMAN_USERNAME && env.REINMAN_PASSWORD && env.SESSION_SECRET);
+    // check both fields every time so a wrong username takes as long as a wrong password
+    const userOk = await checkPassword(env.REINMAN_USERNAME?.trim().toLowerCase(), (body.username ?? "").trim().toLowerCase());
+    const passOk = await checkPassword(env.REINMAN_PASSWORD, body.password ?? "");
+    if (!configured || !userOk || !passOk) {
       await env.DB.prepare("INSERT INTO login_failures (ip) VALUES (?)").bind(ip).run();
-      return json({ error: env.REINMAN_PASSWORD && env.SESSION_SECRET ? "Wrong password." : "Authentication is not configured on the server." }, 401);
+      return json({ error: configured ? "Wrong username or password." : "Login is not set up on the server yet." }, 401);
     }
-    const token = await makeSession(env.SESSION_SECRET);
+    const token = await makeSession(env.SESSION_SECRET!);
     return json({ ok: true }, 200, { "Set-Cookie": sessionCookie(token, 30 * 86400) });
   }
   if (url.pathname === "/api/logout" && req.method === "POST") {
