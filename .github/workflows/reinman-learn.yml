@@ -1,0 +1,29 @@
+# Rein Man: continuous learning. Trains a candidate on all graded history, validates it
+# out-of-sample against the champion, promotes only if it wins; then a walk-forward backtest.
+name: reinman-learn
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 9 * * 1"    # Mondays
+concurrency:
+  group: reinman-db-writer
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  learn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults: { run: { working-directory: engine } }
+    env:
+      REINMAN_DB: d1
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_TOKEN }}
+      D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: engine/pyproject.toml }
+      - run: pip install -e .
+      - run: reinman train
+      - run: reinman backtest

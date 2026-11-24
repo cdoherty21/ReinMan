@@ -1,0 +1,26 @@
+[project]
+name = "reinman"
+version = "1.0.0"
+description = "Rein Man — The Intelligence Behind the Odds. Statistical horse racing handicapping engine."
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "lightgbm>=4.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+reinman = "reinman.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["reinman*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,32 @@
+{
+  "name": "rein-man",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rein Man — The Intelligence Behind the Odds.",
+  "type": "module",
+  "scripts": {
+    "dev:web": "vite --config web/vite.config.ts",
+    "build": "vite build --config web/vite.config.ts",
+    "typecheck": "tsc -p web/tsconfig.json --noEmit && tsc -p worker/tsconfig.json --noEmit",
+    "test": "vitest run --config web/vitest.config.ts",
+    "dev": "npm run build && wrangler dev -c worker/wrangler.jsonc",
+    "db:migrate:local": "wrangler d1 migrations apply rein-man --local -c worker/wrangler.jsonc",
+    "db:migrate:remote": "wrangler d1 migrations apply rein-man --remote -c worker/wrangler.jsonc",
+    "deploy": "npm run build && wrangler deploy -c worker/wrangler.jsonc"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261124.1",
+    "@playwright/test": "^1.63.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1",
+    "wrangler": "^4.167.0"
+  }
+}
