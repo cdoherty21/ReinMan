@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "../main";
-import { money, odds, shiftDate, stamp, todayET, useApi } from "../lib";
+import { money, odds, shiftDate, stamp, todayET, useApi, wagerLabel } from "../lib";
 import { Confidence, Empty, ErrorBox, Loading } from "./common";
 import { ordinal } from "./Today";
 
@@ -8,14 +8,75 @@ type Row = {
   race_id: string; race_date: string; track_id: string; race_number: number; top1: string; top1_name: string | null;
   top2: string | null; top3: string | null; confidence: string; decision: string; model_version: string; created_at: string;
   locked_at: string; top1_finish: number | null; winner_rank: number | null; top1_odds: number | null;
-  top1_win_payoff: number | null; status: string | null; wagered: number; returned: number;
+  top1_win_payoff: number | null; status: string | null; wagered: number; returned: number; pending_wagers: number;
 };
+
+type Wager = {
+  wager_id: number; wager_type: string; selection: string; cost: number;
+  grade_status: string | null; payout: number | null;
+};
+
+function profit(value: number) {
+  return (value > 0 ? "+" : "") + money(value);
+}
+
+function profitClass(value: number) {
+  return value > 0 ? "pos" : value < 0 ? "neg" : "muted";
+}
+
+function WagerBreakdown({ row, onClose }: { row: Row; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const { data, error } = useApi<{ wagers: Wager[] }>(`/api/race/${encodeURIComponent(row.race_id)}`);
+  useEffect(() => { dialog.current?.showModal(); }, []);
+  return (
+    <dialog ref={dialog} className="wager-dialog card" onClose={onClose} aria-labelledby="wager-breakdown-title">
+      <div className="card-head">
+        <h2 id="wager-breakdown-title">{row.track_id} R{row.race_number} · Wager breakdown</h2>
+        <button className="btn ghost small" onClick={() => dialog.current?.close()}>Close</button>
+      </div>
+      <p className="muted small">{row.race_date} · Rein Man's hypothetical wagers</p>
+      {error && <ErrorBox error={error} />}
+      {!data && !error && <Loading />}
+      {data && (
+        <>
+          {data.wagers.length === 0 ? <Empty>No recommended wagers.</Empty> : (
+            <div className="table-wrap">
+              <table className="data compact">
+                <thead><tr><th>Bet</th><th>Selection</th><th>Result</th><th className="num">Stake</th><th className="num">Payout</th><th className="num">Net</th></tr></thead>
+                <tbody>
+                  {data.wagers.map((w) => {
+                    const net = w.payout == null ? null : w.payout - w.cost;
+                    return (
+                      <tr key={w.wager_id}>
+                        <td>{wagerLabel(w.wager_type)}</td>
+                        <td className="mono">{w.selection}</td>
+                        <td><span className={`res ${w.grade_status ?? ""}`}>{w.grade_status?.replace(/_/g, " ") ?? "Pending"}</span></td>
+                        <td className="num">{money(w.cost)}</td>
+                        <td className="num">{money(w.payout)}</td>
+                        <td className={`num ${net == null ? "muted" : profitClass(net)}`}>{net == null ? "—" : profit(net)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p><b>Net profit/loss: </b>{data.wagers.some((w) => w.payout == null) ? <span className="muted">Pending settlement</span> : (() => {
+            const net = data.wagers.reduce((sum, w) => sum + (w.payout ?? 0) - w.cost, 0);
+            return <b className={profitClass(net)}>{profit(net)}</b>;
+          })()}</p>
+        </>
+      )}
+    </dialog>
+  );
+}
 
 export function History() {
   const [from, setFrom] = useState(shiftDate(todayET(), -30));
   const [to, setTo] = useState(todayET());
   const [track, setTrack] = useState("");
   const [page, setPage] = useState(0);
+  const [selected, setSelected] = useState<Row | null>(null);
   const q = new URLSearchParams({ from, to, page: String(page) });
   if (track) q.set("track", track.toUpperCase());
   const { data, error } = useApi<{ rows: Row[] }>(`/api/history?${q}`);
@@ -40,7 +101,7 @@ export function History() {
           <div className="table-wrap">
             <table className="data">
               <thead>
-                <tr><th>Date</th><th>Race</th><th>Top pick</th><th className="num">Odds</th><th>Finish</th><th className="hide-sm">Winner rank</th><th>Conf.</th><th className="num">Wagers</th><th className="hide-sm">Locked</th></tr>
+                <tr><th>Date</th><th>Race</th><th>Top pick</th><th className="num">Odds</th><th>Top pick finish</th><th className="hide-sm">Winner rank</th><th>Conf.</th><th className="num">Net profit/loss</th><th className="hide-sm">Locked</th></tr>
               </thead>
               <tbody>
                 {data.rows.map((r) => (
@@ -50,10 +111,10 @@ export function History() {
                     <td>#{r.top1} {r.top1_name}</td>
                     <td className="num">{odds(r.top1_odds)}</td>
                     <td>{r.status == null ? <span className="muted">Pending</span> : r.status !== "graded" ? <span className="muted">{r.status.replace("_", " ")}</span> :
-                      r.top1_finish === 1 ? <span className="hit">Won {money(r.top1_win_payoff)}</span> : r.top1_finish ? ordinal(r.top1_finish) : "Unplaced"}</td>
+                      r.top1_finish === 1 ? <span className="hit">1st{r.top1_win_payoff != null && <><br /><span className="small">{money(r.top1_win_payoff)} ($2 win)</span></>}</span> : r.top1_finish ? ordinal(r.top1_finish) : "Unplaced"}</td>
                     <td className="hide-sm">{r.winner_rank ? ordinal(r.winner_rank) : "—"}</td>
                     <td><Confidence level={r.confidence} /></td>
-                    <td className="num">{r.wagered ? <span className={r.returned - r.wagered >= 0 ? "pos" : "neg"}>{money(r.returned - r.wagered)}</span> : <span className="muted">pass</span>}</td>
+                    <td className="num">{r.wagered ? <button type="button" className="btn ghost small" onClick={() => setSelected(r)} aria-label={`View wagers for ${r.track_id} race ${r.race_number}`}><span className={r.pending_wagers > 0 ? "muted" : profitClass(r.returned - r.wagered)}>{r.pending_wagers > 0 ? "Pending" : profit(r.returned - r.wagered)} ▾</span></button> : <span className="muted">Pass</span>}</td>
                     <td className="hide-sm small muted">{stamp(r.created_at)}</td>
                   </tr>
                 ))}
@@ -66,6 +127,7 @@ export function History() {
           </div>
         </section>
       )}
+      {selected && <WagerBreakdown key={selected.race_id} row={selected} onClose={() => setSelected(null)} />}
     </>
   );
 }

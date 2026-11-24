@@ -278,3 +278,9 @@ sup { font-size: 0.6rem; color: var(--ink-3); margin-left: 2px; }
 .login-card .linkish { align-self: center; }
 .pp { margin-top: 0.6rem; border-top: 1px dashed var(--line); padding-top: 0.5rem; }
 .pp h4 { margin-bottom: 0.3rem; }
+
+/* History wager breakdown */
+.wager-dialog { width: min(680px, calc(100% - 2rem)); max-height: calc(100% - 2rem); margin: auto; overflow: auto; color: var(--charcoal); }
+.wager-dialog::backdrop { background: rgba(16, 36, 25, 0.55); }
+.wager-dialog .card-head { justify-content: space-between; }
+.wager-dialog .card-head h2 { flex: 1; }
