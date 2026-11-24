@@ -33,3 +33,22 @@ jobs:
         run: reinman documents --rescan
       - if: inputs.rescan != true
         run: reinman documents
+      - name: Inspect scan outcomes
+        run: |
+          python - <<'PY'
+          from reinman.db import connect
+          from reinman.documents import _program_text, document_text, pocket_card
+          from reinman.programs import program_cards
+          import json
+          db = connect()
+          docs = db.query("SELECT d.id, d.filename, d.status, d.chars, d.race_date, d.track_id, d.summary, hex(substr(f.bytes,1,5)) AS signature FROM documents d LEFT JOIN document_file_chunks f ON f.document_id=d.id AND f.seq=0 ORDER BY d.id DESC LIMIT 20")
+          for doc in docs:
+              text = _program_text(db, doc, document_text(db, doc['id']))
+              summary = json.loads(doc['summary'] or '{}')
+              print({k: doc[k] for k in ('id','status','chars','race_date','track_id','signature')}, {
+                  'extension': doc['filename'].rsplit('.', 1)[-1] if '.' in doc['filename'] else '',
+                  'pocket': pocket_card(text), 'parsed_cards': len(program_cards(text)), 'pdf_chars': len(text),
+                  'linked': len(summary.get('races_linked', [])), 'horses': summary.get('horses_matched'),
+                  'imported': len(summary.get('race_cards_imported', [])),
+              })
+          PY
