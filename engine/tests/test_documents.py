@@ -162,3 +162,28 @@ def test_csv_entry_table_creates_race_and_adds_missing_fields(db):
     documents.process_pending(db)
     assert db.scalar("SELECT COUNT(*) FROM races") == 1
     assert db.scalar("SELECT weight FROM runners WHERE program_number='1'") == 120
+
+
+def test_partial_extract_only_enriches_a_complete_card(db):
+    partial = """Finger Lakes | 2026-11-26
+Scheduled races: 8 | First post ET: 12:10 PM
+STATUS: PARTIAL EXTRACT ONLY. Not a complete race card.
+Race 3 | claiming $5,000 | purse $13,700 | 6f dirt
+1 | Morning Thunder | 41,34,53 | A Rider | B Trainer | 5/2
+2 | Incorrect Horse | 48,42,43 | C Rider | D Trainer | 3/1
+Reported scratch: Race 3 Quiet Harbor
+"""
+    doc_id = _upload(db, partial, filename="finger-lakes.txt")
+    documents.process_pending(db)
+    assert db.scalar("SELECT COUNT(*) FROM races") == 0
+    assert "Partial extract recognized" in db.scalar("SELECT summary FROM documents WHERE id=?", [doc_id])
+    ingest.store_card(db, _card(), "official_program")
+    db.execute("UPDATE documents SET status='pending' WHERE id=?", [doc_id])
+    documents.process_pending(db)
+    summary = json.loads(db.scalar("SELECT summary FROM documents WHERE id=?", [doc_id]))
+    assert summary["races_linked"] == ["FL-20261126-3"]
+    assert summary["partial_conflicts"] == [3]
+    assert summary["horses_matched"] == 1
+    assert db.scalar("SELECT COUNT(*) FROM runners") == 5
+    assert db.scalar("SELECT scratched FROM runners WHERE program_number='3'") == 0
+    assert db.scalar("SELECT COUNT(*) FROM document_notes WHERE kind='scratch report'") == 1

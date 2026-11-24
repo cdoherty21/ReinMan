@@ -29,6 +29,7 @@ from datetime import date, timedelta
 from .db import Database
 from . import programs
 from .document_formats import read_document
+from .document_extracts import partial_extract
 from .document_tables import table_cards
 from .ingest import race_id_for, store_card
 from .sources.otb import _PAYOUT
@@ -307,6 +308,51 @@ def _fill_card_gaps(db: Database, rid: str, race: dict) -> None:
                        + " WHERE race_id=? AND program_number=?", [*updates.values(), rid, program])
 
 
+def _scan_partial(db: Database, doc_id: int, partial: tuple[str, str, dict]) -> dict:
+    track, day, races = partial
+    linked, missing, conflicts, notes = [], [], [], []
+    matched = 0
+    for number, race in sorted(races.items()):
+        rid = race_id_for(track, day, number)
+        by_program = {row["program_number"]: row["horse_name"] for row in db.query(
+            "SELECT program_number, horse_name FROM runners WHERE race_id=?", [rid],
+        )}
+        if not by_program:
+            missing.append(number)
+            continue
+        samples = race["runners"]
+        verified = [r for r in samples if norm_name(by_program.get(r["program_number"])) == norm_name(r["horse_name"])]
+        if samples and len(verified) != len(samples):
+            conflicts.append(number)
+        # Keep race-level conditions separate from a partial extract whose field contradicts the card.
+        if len(verified) == len(samples):
+            _fill_card_gaps(db, rid, race)
+        elif verified:
+            _fill_card_gaps(db, rid, {"runners": verified})
+        linked.append(rid)
+        matched += len(verified)
+        race_fields = [f'{key.replace("_", " ")}: {race[key]}' for key in ("race_class", "distance_desc", "purse", "surface")
+                       if race.get(key) is not None]
+        if race.get("post_time"):
+            race_fields.append(f"listed post: {race['post_time']} (UTC)")
+        if race_fields and len(verified) == len(samples):
+            notes.append({"race_id": rid, "program_number": None, "horse_name": None,
+                          "kind": "race details", "text": " · ".join(race_fields), "data": None})
+        for runner in verified:
+            notes.append({"race_id": rid, "program_number": runner["program_number"], "horse_name": runner["horse_name"],
+                          "kind": "runner extract", "text": runner["source_line"], "data": None})
+        for horse in race["scratch_reports"]:
+            if norm_name(horse) in {norm_name(name) for name in by_program.values()}:
+                notes.append({"race_id": rid, "program_number": None, "horse_name": horse,
+                              "kind": "scratch report", "text": f"Uploaded extract reports {horse} scratched.", "data": None})
+    db.insert_many("document_notes", [dict(document_id=doc_id, **note) for note in notes])
+    summary = {"races_linked": linked, "horses_matched": matched, "race_cards_imported": [],
+               "partial_missing_races": missing, "partial_conflicts": conflicts}
+    if not linked:
+        summary["message"] = "Partial extract recognized. Upload the complete race program to link these notes."
+    return summary
+
+
 def _store_program_cards(db: Database, cards: list[dict]) -> tuple[list[str], set[str]]:
     imported, race_ids = [], set()
     for card in cards:
@@ -356,6 +402,15 @@ def process_pending(db: Database, limit: int = 20, touched: set[str] | None = No
                     raise ValueError("No readable racing text recovered. Try a clearer scan or an original program.")
                 if original and doc["chars"] != len(text):
                     _replace_text(db, doc["id"], text)
+                partial = partial_extract(text)
+                if partial:
+                    summary = _scan_partial(db, doc["id"], partial)
+                    db.execute("UPDATE documents SET status='processed', processed_at=?, summary=?, error=NULL WHERE id=?",
+                               [now_iso(), json.dumps(summary), doc["id"]])
+                    if touched is not None:
+                        touched.update(summary["races_linked"])
+                    done += 1
+                    continue
                 cards = programs.program_cards(text) or table_cards(tables, doc)
                 imported, race_ids = _store_program_cards(db, cards)
                 if cards:

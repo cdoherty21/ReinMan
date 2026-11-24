@@ -8,7 +8,7 @@ import { Empty, ErrorBox, Loading } from "./common";
 type Summary = {
   races_linked?: string[]; horses_matched?: number; workouts?: number; workouts_applied_to_cards?: number;
   payouts?: number; scratch_mentions?: number; canonical_import?: boolean;
-  cards?: number; official?: number; race_cards_imported?: string[]; waiting_for_race?: number; message?: string;
+  cards?: number; official?: number; race_cards_imported?: string[]; waiting_for_race?: number; message?: string; partial_missing_races?: number[]; partial_conflicts?: number[];
 };
 type Doc = {
   id: number; uploaded_at: string; filename: string; chars: number; race_date: string | null; track_id: string | null;
@@ -187,6 +187,10 @@ function DocDetail({ id, summary }: { id: number; summary: Summary | null }) {
       {races.length === 0 && !summary?.canonical_import && (
         <p className="small muted">No stored race matched this document's horse names. Set the race date and track when uploading, or upload once the card is loaded.</p>
       )}
+      {Boolean(summary?.partial_missing_races?.length) &&
+        <p className="small muted">Full cards still needed for races {summary?.partial_missing_races?.join(", ")}.</p>}
+      {Boolean(summary?.partial_conflicts?.length) &&
+        <p className="small muted">Some runner entries differed from the complete cards for races {summary?.partial_conflicts?.join(", ")}.</p>}
       <ul className="factors small">
         {data.notes.filter((n) => n.kind !== "passage").map((n) => (
           <li key={n.id}><b>{n.kind}</b>{n.horse_name ? ` · ${n.horse_name}` : ""}: <span className="mono">{n.text}</span></li>
