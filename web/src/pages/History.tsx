@@ -9,6 +9,7 @@ type Row = {
   top2: string | null; top3: string | null; confidence: string; decision: string; model_version: string; created_at: string;
   locked_at: string; top1_finish: number | null; winner_rank: number | null; top1_odds: number | null;
   top1_win_payoff: number | null; status: string | null; wagered: number; returned: number; pending_wagers: number;
+  wager_count: number; wager_type: string | null; wager_selection: string | null; wager_status: string | null;
 };
 
 type Wager = {
@@ -22,6 +23,18 @@ function profit(value: number) {
 
 function profitClass(value: number) {
   return value > 0 ? "pos" : value < 0 ? "neg" : "muted";
+}
+
+function TopPickProfit({ row }: { row: Row }) {
+  if (row.status === "top1_scratched" || row.status === "no_contest") {
+    return <span className="muted">{money(0)} · Refunded</span>;
+  }
+  if (row.status !== "graded") return <span className="muted">Pending</span>;
+  if (row.top1_finish === 1 && (row.top1_win_payoff == null || row.top1_win_payoff <= 0)) {
+    return <span className="muted">Awaiting payout</span>;
+  }
+  const net = row.top1_finish === 1 ? row.top1_win_payoff! - 2 : -2;
+  return <span className={profitClass(net)}>{profit(net)}</span>;
 }
 
 function WagerBreakdown({ row, onClose }: { row: Row; onClose: () => void }) {
@@ -61,7 +74,7 @@ function WagerBreakdown({ row, onClose }: { row: Row; onClose: () => void }) {
               </table>
             </div>
           )}
-          <p><b>Net profit/loss: </b>{data.wagers.some((w) => w.payout == null) ? <span className="muted">Pending settlement</span> : (() => {
+          <p><b>Recommended Bets P/L </b>{data.wagers.some((w) => w.payout == null) ? <span className="muted">Pending settlement</span> : (() => {
             const net = data.wagers.reduce((sum, w) => sum + (w.payout ?? 0) - w.cost, 0);
             return <b className={profitClass(net)}>{profit(net)}</b>;
           })()}</p>
@@ -85,7 +98,7 @@ export function History() {
       <div className="page-head">
         <div>
           <h1>History</h1>
-          <p className="muted">Every locked selection, winners and losers alike. Nothing is deleted or revised.</p>
+          <p className="muted">Top Pick P/L assumes a $2 win bet on every top pick. Recommended Bets P/L tracks only Rein Man’s suggested wagers.</p>
         </div>
       </div>
       <section className="filters">
@@ -101,7 +114,7 @@ export function History() {
           <div className="table-wrap">
             <table className="data">
               <thead>
-                <tr><th>Date</th><th>Race</th><th>Top pick</th><th className="num">Odds</th><th>Top pick finish</th><th className="hide-sm">Winner rank</th><th>Conf.</th><th className="num">Net profit/loss</th><th className="hide-sm">Locked</th></tr>
+                <tr><th>Date</th><th>Race</th><th>Top pick</th><th className="num">Odds</th><th>Top pick finish</th><th className="hide-sm">Winner rank</th><th>Conf.</th><th className="num">Top Pick P/L</th><th>Recommended bets</th><th className="num">Recommended Bets P/L</th><th className="hide-sm">Locked</th></tr>
               </thead>
               <tbody>
                 {data.rows.map((r) => (
@@ -111,9 +124,11 @@ export function History() {
                     <td>#{r.top1} {r.top1_name}</td>
                     <td className="num">{odds(r.top1_odds)}</td>
                     <td>{r.status == null ? <span className="muted">Pending</span> : r.status !== "graded" ? <span className="muted">{r.status.replace("_", " ")}</span> :
-                      r.top1_finish === 1 ? <span className="hit">1st{r.top1_win_payoff != null && <><br /><span className="small">{money(r.top1_win_payoff)} ($2 win)</span></>}</span> : r.top1_finish ? ordinal(r.top1_finish) : "Unplaced"}</td>
+                      r.top1_finish === 1 ? <span className="hit">1st</span> : r.top1_finish ? ordinal(r.top1_finish) : "Unplaced"}</td>
                     <td className="hide-sm">{r.winner_rank ? ordinal(r.winner_rank) : "—"}</td>
                     <td><Confidence level={r.confidence} /></td>
+                    <td className="num"><TopPickProfit row={r} /></td>
+                    <td>{r.wager_count === 1 && r.wager_type ? <><span>{wagerLabel(r.wager_type)} {r.wager_selection}</span><br /><span className={`res ${r.wager_status ?? ""}`}>{r.wager_status?.replace(/_/g, " ") ?? "Pending"}</span></> : r.wager_count > 1 ? <button type="button" className="linkish" onClick={() => setSelected(r)}>{r.wager_count} bets</button> : <span className="muted">Pass</span>}</td>
                     <td className="num">{r.wagered ? <button type="button" className="btn ghost small" onClick={() => setSelected(r)} aria-label={`View wagers for ${r.track_id} race ${r.race_number}`}><span className={r.pending_wagers > 0 ? "muted" : profitClass(r.returned - r.wagered)}>{r.pending_wagers > 0 ? "Pending" : profit(r.returned - r.wagered)} ▾</span></button> : <span className="muted">Pass</span>}</td>
                     <td className="hide-sm small muted">{stamp(r.created_at)}</td>
                   </tr>
