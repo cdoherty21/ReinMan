@@ -8,7 +8,7 @@ import { Empty, ErrorBox, Loading } from "./common";
 type Summary = {
   races_linked?: string[]; horses_matched?: number; workouts?: number; workouts_applied_to_cards?: number;
   payouts?: number; scratch_mentions?: number; canonical_import?: boolean;
-  cards?: number; official?: number; race_cards_imported?: string[]; waiting_for_race?: number;
+  cards?: number; official?: number; race_cards_imported?: string[]; waiting_for_race?: number; message?: string;
 };
 type Doc = {
   id: number; uploaded_at: string; filename: string; chars: number; race_date: string | null; track_id: string | null;
@@ -39,7 +39,11 @@ export function Documents() {
     async function uploadFile(f: File) {
       try {
         if (f.size > MAX_FILE_BYTES) throw new Error("Original file exceeds 8 MB.");
-        const { text, pages } = await extractText(f);
+        const { text, pages } = await extractText(f).catch(async (error) => {
+          if (!/\.pdf$/i.test(f.name) && f.type !== "application/pdf"
+            && await f.slice(0, 5).text() !== "%PDF-") throw error;
+          return { text: "", pages: undefined };
+        });
         const original = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onerror = () => reject(reader.error ?? new Error("Could not read the file."));
@@ -55,14 +59,16 @@ export function Documents() {
         });
         uploaded = true;
         out.push(duplicate ? `↪ ${f.name} — Already uploaded` :
-          `✓ ${f.name} — ${text.length.toLocaleString()} characters${pages ? ` from ${pages} pages` : ""}`);
+          `✓ ${f.name} — ${text ? `${text.length.toLocaleString()} characters${pages ? ` from ${pages} pages` : ""}` : "saved for extraction"}`);
       } catch (e) {
         out.push(`✗ ${f.name} — ${(e as Error).message}`);
       }
       setLog([...out]);
     }
     for (const file of files) {
-      if (!/\.zip$/i.test(file.name) && !["application/zip", "application/x-zip-compressed"].includes(file.type)) {
+      const archive = /\.zip$/i.test(file.name) || (!/\.(docx|xlsx)$/i.test(file.name)
+        && ["application/zip", "application/x-zip-compressed"].includes(file.type));
+      if (!archive) {
         await uploadFile(file);
         continue;
       }
@@ -107,11 +113,11 @@ export function Documents() {
       <section className="card">
         <h2>Upload</h2>
         <p className="small muted">
-          Upload text-based PDFs, HTML, TXT, CSV, or Rein Man JSON up to 8 MB each. You can also upload a ZIP up to 64 MB. Rein Man extracts useful racing details
+          Upload PDFs, images, Word or Excel files, HTML, TXT, CSV, or Rein Man JSON up to 8 MB each. You can also upload a ZIP up to 64 MB. Rein Man extracts useful racing details
           and builds race cards from supported programs. Linked evidence appears on race pages.
         </p>
         <div className="upload-form">
-          <input type="file" multiple accept=".zip,.pdf,.html,.htm,.txt,.csv,.json,application/pdf,text/*"
+          <input type="file" multiple accept=".zip,.pdf,.html,.htm,.txt,.csv,.tsv,.json,.docx,.xlsx,.png,.jpg,.jpeg,.webp,.tif,.tiff,image/*,application/pdf,text/*"
             onChange={(e) => setFiles(Array.from(e.target.files ?? []))} aria-label="Choose documents" />
           <label>Race date (optional) <input type="date" value={raceDate} max={undefined} onChange={(e) => setRaceDate(e.target.value)} /></label>
           <label>Track code (optional) <input value={track} placeholder="e.g. FL" maxLength={8} size={6} onChange={(e) => setTrack(e.target.value)} /></label>
@@ -158,9 +164,9 @@ function DocRow({ d, open, onToggle }: { d: Doc; open: boolean; onToggle: () => 
         <td>
           {d.status === "pending" ? <span className="muted">Awaiting automatic scan</span> :
             d.status === "waiting" ? <span className="muted">Waiting for the race card</span> :
-            d.status === "error" ? <span className="neg" title={d.error ?? ""}>Error</span> : <span className="pos">Scanned</span>}
+            d.status === "error" ? <span className="neg">{d.error || "Scan failed"}</span> : <span className="pos">Scanned</span>}
         </td>
-        <td className="small">{found ?? "—"}</td>
+        <td className="small">{s?.message || found || "—"}</td>
         <td><a className="btn ghost small" href={`/api/documents/${d.id}/file?download`}>Download</a>{d.status === "processed" && <button className="btn ghost small" aria-expanded={open} onClick={onToggle}>{open ? "Hide" : "Details"}</button>}</td>
       </tr>
       {open && <tr className="analysis"><td colSpan={5}><DocDetail id={d.id} summary={s} /></td></tr>}

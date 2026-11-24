@@ -1,6 +1,6 @@
 // Text extraction in the browser, so the Worker never has to parse files.
 // PDFs: pdf.js text items are regrouped into lines by their vertical position.
-// HTML: visible text. Text/CSV/JSON: as is. Images are not supported (no OCR).
+// HTML: visible text. PDFs, images and Office files can also be read from their saved originals.
 
 export type Extracted = { text: string; pages?: number };
 
@@ -50,9 +50,7 @@ export async function extractText(file: File): Promise<Extracted> {
     }
     return { text: pages.join("\n"), pages: pdf.numPages };
   }
-  if (file.type.startsWith("image/")) {
-    throw new Error("Images and scanned pages aren't supported yet. Upload a PDF with real text, or a text/HTML/CSV file.");
-  }
+  if (file.type.startsWith("image/") || /\.(docx|xlsx|png|jpe?g|webp|tiff?)$/i.test(name)) return { text: "" };
   const raw = await file.text();
   if (file.type === "text/html" || name.endsWith(".html") || name.endsWith(".htm")) return { text: htmlToText(raw) };
   return { text: raw };

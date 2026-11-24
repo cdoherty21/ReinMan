@@ -41,7 +41,12 @@ to stored races by horse names, keeps each horse's passage for the race page, an
 workouts (standard "date track distance condition time grade rank/field" lines, which feed
 the model's workout features) and payout lines. JSON in the canonical format is imported
 directly. Matching files with the same upload hints are accepted once. Overlapping race programs add evidence to the existing card. Uploads request a scan immediately through the Worker’s GitHub dispatch token. The hourly document workflow provides a fallback. Click the filename to view an upload. Earlier uploads show the extracted text
-because only the text was stored. Scanned images require a text layer before upload.
+because only the text was stored. The scanner can OCR images and the first 12 pages of image-only
+PDFs. It reads labeled entry tables from Word, Excel, CSV, TSV, HTML, and readable text layouts.
+A table needs a race number, program number and horse name. Supply the track and date in the table
+or as upload hints. Available fields such as post time, surface, distance, purse, morning line,
+jockey, trainer and weight populate the race page. Picks are recorded only when a verified post
+time is available and the race is still upcoming.
 
 ## 2. Racing data
 No live source is connected (no free, permitted U.S. feed exists — see

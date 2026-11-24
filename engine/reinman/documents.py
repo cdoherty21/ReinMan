@@ -22,11 +22,14 @@ from __future__ import annotations
 import json
 import logging
 import re
+import subprocess
 from collections import defaultdict
 from datetime import date, timedelta
 
 from .db import Database
 from . import programs
+from .document_formats import read_document
+from .document_tables import table_cards
 from .ingest import race_id_for, store_card
 from .sources.otb import _PAYOUT
 from .sources.tracks import canonical_track_code
@@ -262,16 +265,46 @@ def _try_canonical(db: Database, text: str) -> dict | None:
             "official": official}
 
 
-def _program_text(db: Database, doc: dict, text: str) -> str:
-    signature = db.scalar(
-        "SELECT hex(substr(bytes,1,5)) FROM document_file_chunks WHERE document_id=? AND seq=0",
-        [doc["id"]],
-    )
-    if signature != "255044462D":
-        return text
-    chunks = db.query("SELECT hex(bytes) AS encoded FROM document_file_chunks WHERE document_id=? ORDER BY seq",
-                      [doc["id"]])
-    return programs.pdf_layout(b"".join(bytes.fromhex(row["encoded"]) for row in chunks))
+def _original_bytes(db: Database, doc_id: int) -> bytes | None:
+    chunks = []
+    for start in range(0, 50, 3):
+        rows = db.query(
+            "SELECT hex(bytes) AS encoded FROM document_file_chunks WHERE document_id=? AND seq>=? ORDER BY seq LIMIT 3",
+            [doc_id, start],
+        )
+        chunks.extend(bytes.fromhex(row["encoded"]) for row in rows)
+        if len(rows) < 3:
+            break
+    return b"".join(chunks) if chunks else None
+
+
+def _replace_text(db: Database, doc_id: int, text: str) -> None:
+    db.execute("DELETE FROM document_chunks WHERE document_id=?", [doc_id])
+    for seq, i in enumerate(range(0, len(text), 40_000)):
+        db.insert("document_chunks", {"document_id": doc_id, "seq": seq, "text": text[i:i + 40_000]})
+    db.execute("UPDATE documents SET chars=? WHERE id=?", [len(text), doc_id])
+
+
+def _fill_card_gaps(db: Database, rid: str, race: dict) -> None:
+    fields = ("post_time", "distance_yards", "distance_desc", "surface", "race_class", "purse", "track_condition")
+    updates = {key: race[key] for key in fields if race.get(key) is not None}
+    if updates:
+        db.execute("UPDATE races SET " + ", ".join(f"{key}=COALESCE({key},?)" for key in updates)
+                   + " WHERE race_id=?", [*updates.values(), rid])
+
+    runners = {r["program_number"]: r for r in db.query(
+        "SELECT program_number, horse_name FROM runners WHERE race_id=?", [rid])}
+    fields = ("post_position", "weight", "ml_odds", "jockey_id", "jockey_name", "trainer_id",
+              "trainer_name", "sire", "dam", "dam_sire", "equipment", "medication")
+    for runner in race["runners"]:
+        program = runner["program_number"]
+        old = runners.get(program)
+        if not old or norm_name(old["horse_name"]) != norm_name(runner["horse_name"]):
+            continue
+        updates = {key: runner[key] for key in fields if runner.get(key) is not None}
+        if updates:
+            db.execute("UPDATE runners SET " + ", ".join(f"{key}=COALESCE({key},?)" for key in updates)
+                       + " WHERE race_id=? AND program_number=?", [*updates.values(), rid, program])
 
 
 def _store_program_cards(db: Database, cards: list[dict]) -> tuple[list[str], set[str]]:
@@ -294,9 +327,7 @@ def _store_program_cards(db: Database, cards: list[dict]) -> tuple[list[str], se
                 rid = matches[0]["race_id"]
         race_ids.add(rid)
         if db.scalar("SELECT EXISTS(SELECT 1 FROM runners WHERE race_id=?)", [rid]):
-            if race["post_time"]:
-                db.execute("UPDATE races SET post_time=? WHERE race_id=? AND post_time IS NULL",
-                           [race["post_time"], rid])
+            _fill_card_gaps(db, rid, race)
             continue
         store_card(db, card, "uploaded_program")
         db.execute("UPDATE races SET status='official' WHERE race_id=? AND EXISTS "
@@ -305,7 +336,7 @@ def _store_program_cards(db: Database, cards: list[dict]) -> tuple[list[str], se
     return imported, race_ids
 
 
-def process_pending(db: Database, limit: int = 20) -> dict:
+def process_pending(db: Database, limit: int = 20, touched: set[str] | None = None) -> dict:
     docs = db.query(
         "SELECT d.* FROM documents d WHERE d.status='pending' OR (d.status='waiting' AND EXISTS ("
         "SELECT 1 FROM races r JOIN runners rn ON rn.race_id=r.race_id "
@@ -319,12 +350,16 @@ def process_pending(db: Database, limit: int = 20) -> dict:
             if doc["filename"].lower().endswith(".json"):
                 summary = _try_canonical(db, text)
             if summary is None:
-                text = _program_text(db, doc, text)
-                cards = programs.program_cards(text)
+                original = _original_bytes(db, doc["id"])
+                text, tables = read_document(doc["filename"], original, text)
+                if not text.strip():
+                    raise ValueError("No readable racing text recovered. Try a clearer scan or an original program.")
+                if original and doc["chars"] != len(text):
+                    _replace_text(db, doc["id"], text)
+                cards = programs.program_cards(text) or table_cards(tables, doc)
                 imported, race_ids = _store_program_cards(db, cards)
                 if cards:
-                    meet = cards[0]["meet"]
-                    doc = dict(doc, race_date=meet["race_date"], track_id=meet["track_id"], program_race_ids=race_ids)
+                    doc = dict(doc, program_race_ids=race_ids)
                 card = pocket_card(text)
                 if card and not race_ids and not db.scalar(
                     "SELECT EXISTS(SELECT 1 FROM races r JOIN runners rn ON rn.race_id=r.race_id "
@@ -336,13 +371,26 @@ def process_pending(db: Database, limit: int = 20) -> dict:
                     continue
                 summary = scan(db, doc, text)
                 summary["race_cards_imported"] = imported
+                if not summary["races_linked"] and not imported:
+                    if original is None and doc["filename"].lower().endswith(".pdf"):
+                        summary["message"] = "Saved text did not match a race. Upload the original PDF for layout extraction."
+                    else:
+                        summary["message"] = "No race card could be identified. Include the track, date, race number, and labeled entries."
             db.execute("UPDATE documents SET status='processed', processed_at=?, summary=? WHERE id=?",
                        [now_iso(), json.dumps(summary), doc["id"]])
+            if touched is not None:
+                touched.update(summary.get("races_linked") or [])
+                touched.update(summary.get("race_cards_imported") or [])
             done += 1
         except Exception as e:  # noqa: BLE001 — one bad document must not stop the others
             log.exception("document %s failed", doc["id"])
+            message = str(e)
+            if isinstance(e, subprocess.TimeoutExpired):
+                message = "Document extraction took too long. Try splitting the file into smaller sections."
+            elif isinstance(e, subprocess.CalledProcessError):
+                message = "Could not read this PDF or image. Check whether the file opens and is unlocked."
             db.execute("UPDATE documents SET status='error', processed_at=?, error=? WHERE id=?",
-                       [now_iso(), str(e)[:500], doc["id"]])
+                       [now_iso(), message[:500], doc["id"]])
             errors += 1
     return {"processed": done, "errors": errors}
 
@@ -355,12 +403,28 @@ def process_queue(db: Database, rescan: bool = False) -> dict:
         db.execute(f"DELETE FROM document_notes WHERE document_id IN (SELECT id FROM documents WHERE {predicate})")
         db.execute(f"UPDATE documents SET status='pending', processed_at=NULL, summary=NULL, error=NULL WHERE {predicate}")
     total = {"processed": 0, "errors": 0}
+    touched: set[str] = set()
     while True:
-        batch = process_pending(db)
+        batch = process_pending(db, touched=touched)
         for key in total:
             total[key] += batch[key]
         pending = db.scalar("SELECT EXISTS(SELECT 1 FROM documents WHERE status='pending')")
         if not pending and batch["processed"] + batch["errors"] == 0:
             break
     total["waiting_for_cards"] = db.scalar("SELECT COUNT(*) FROM documents WHERE status='waiting'")
+    if touched:
+        from .predict import predict_date
+        ids = sorted(touched)
+        future = defaultdict(dict)
+        for offset in range(0, len(ids), 90):
+            chunk = ids[offset:offset + 90]
+            for row in db.query(
+                f"SELECT race_id, race_date FROM races WHERE race_id IN ({','.join('?' * len(chunk))}) "
+                "AND status='scheduled' AND post_time>?", [*chunk, now_iso()],
+            ):
+                future[row["race_date"]][row["race_id"]] = ["document"]
+        total["predictions_written"] = sum(
+            predict_date(db, day, changes, only_changed=True)["snapshots_written"]
+            for day, changes in sorted(future.items())
+        )
     return total

@@ -421,12 +421,12 @@ const routes: [string, RegExp, Handler][] = [
         env.DB, "SELECT filename FROM documents WHERE id = ? AND status != 'uploading'", id,
       );
       if (!doc) return json({ error: "not found" }, 404);
-      const chunks = await all<{ bytes: number[] }>(
-        env.DB, "SELECT bytes FROM document_file_chunks WHERE document_id = ? ORDER BY seq", id,
+      const firstChunk = await first<{ pdf: number }>(
+        env.DB, "SELECT hex(substr(bytes, 1, 5)) = '255044462D' AS pdf FROM document_file_chunks WHERE document_id = ? AND seq = 0", id,
       );
       const headers = new Headers({ "Cache-Control": "private, no-store" });
       const download = url.searchParams.has("download");
-      if (!chunks.length || (!download && /\.html?$/i.test(doc.filename))) {
+      if (!firstChunk || (!download && /\.(html?|docx|xlsx|png|jpe?g|webp|tiff?)$/i.test(doc.filename))) {
         const text = await all<{ text: string }>(
           env.DB, "SELECT text FROM document_chunks WHERE document_id = ? ORDER BY seq", id,
         );
@@ -434,8 +434,15 @@ const routes: [string, RegExp, Handler][] = [
         if (download) headers.set("Content-Disposition", 'attachment; filename="extracted-text.txt"');
         return new Response(text.map((row) => row.text).join(""), { headers });
       }
-      const bytes = chunks.map((row) => Uint8Array.from(row.bytes));
-      const pdf = String.fromCharCode(...bytes[0].slice(0, 5)) === "%PDF-";
+      const bytes: Uint8Array<ArrayBuffer>[] = [];
+      for (let start = 0; ; start += 4) {
+        const rows = await all<{ bytes: number[] }>(
+          env.DB, "SELECT bytes FROM document_file_chunks WHERE document_id=? AND seq>=? ORDER BY seq LIMIT 4", id, start,
+        );
+        bytes.push(...rows.map((row) => Uint8Array.from(row.bytes)));
+        if (rows.length < 4) break;
+      }
+      const pdf = firstChunk.pdf === 1;
       // Only native PDFs and inert text are displayed on the authenticated origin.
       headers.set("Content-Type", download ? "application/octet-stream" : pdf ? "application/pdf" : "text/plain; charset=utf-8");
       const name = encodeURIComponent(doc.filename.replace(/[\uD800-\uDFFF]/gu, "\uFFFD")).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16)}`);
@@ -461,8 +468,8 @@ const routes: [string, RegExp, Handler][] = [
       };
       const text = typeof b.text === "string" ? b.text : "";
       const filename = String(b.filename || "").slice(0, 200);
-      if (!filename || !text.trim())
-        return json({ error: "No readable text in this document. Scanned images aren't supported yet." }, 400);
+      if (!filename || (!text.trim() && b.original === undefined))
+        return json({ error: "Choose a document with readable text or upload the original file." }, 400);
       if (text.length > MAX_DOC_CHARS) return json({ error: `Document too large (over ${MAX_DOC_CHARS.toLocaleString()} characters).` }, 413);
       const raceDate = /^\d{4}-\d{2}-\d{2}$/.test(b.race_date ?? "") ? b.race_date : null;
       const track = /^[A-Za-z0-9_]{1,8}$/.test(b.track_id ?? "") ? b.track_id!.toUpperCase() : null;
@@ -508,23 +515,37 @@ const routes: [string, RegExp, Handler][] = [
         if (duplicate) return duplicateResponse(duplicate);
         throw error;
       }
-      const stmts = [];
-      for (let i = 0, seq = 0; i < text.length; i += CHUNK_CHARS, seq++) {
-        stmts.push(env.DB.prepare("INSERT INTO document_chunks (document_id, seq, text) VALUES (?,?,?)")
-          .bind(id, seq, text.slice(i, i + CHUNK_CHARS)));
-      }
-      if (original) {
-        for (let i = 0, seq = 0; i < original.length; i += FILE_CHUNK_BYTES, seq++) {
-          const bytes = Uint8Array.from(original.slice(i, i + FILE_CHUNK_BYTES), (c) => c.charCodeAt(0));
-          stmts.push(env.DB.prepare("INSERT INTO document_file_chunks (document_id, seq, bytes) VALUES (?,?,?)")
-            .bind(id, seq, bytes.buffer));
-        }
-      }
       try {
-        await env.DB.batch([...stmts, env.DB.prepare("UPDATE documents SET status = 'pending' WHERE id = ?").bind(id)]);
+        const textRows = [];
+        for (let i = 0, seq = 0; i < text.length; i += CHUNK_CHARS, seq++) {
+          textRows.push(env.DB.prepare("INSERT INTO document_chunks (document_id, seq, text) VALUES (?,?,?)")
+            .bind(id, seq, text.slice(i, i + CHUNK_CHARS)));
+        }
+        for (let i = 0; i < textRows.length; i += 8) await env.DB.batch(textRows.slice(i, i + 8));
+        if (original !== undefined) {
+          const batchBytes = FILE_CHUNK_BYTES * 2;
+          for (let offset = 0; offset < content.byteLength; offset += batchBytes) {
+            const statements = [];
+            for (let i = offset; i < Math.min(offset + batchBytes, content.byteLength); i += FILE_CHUNK_BYTES) {
+              const bytes = content.slice(i, i + FILE_CHUNK_BYTES);
+              statements.push(env.DB.prepare("INSERT INTO document_file_chunks (document_id, seq, bytes) VALUES (?,?,?)")
+                .bind(id, i / FILE_CHUNK_BYTES, bytes.buffer));
+            }
+            await env.DB.batch(statements);
+          }
+        }
+        await env.DB.prepare("UPDATE documents SET status = 'pending' WHERE id = ?").bind(id).run();
       } catch (error) {
-        await env.DB.prepare("DELETE FROM documents WHERE id = ? AND status = 'uploading'").bind(id).run();
-        throw error;
+        console.error("Document storage failed", { id, size: content.byteLength, error });
+        try {
+          await env.DB.batch([
+            env.DB.prepare("DELETE FROM document_chunks WHERE document_id=?").bind(id),
+            env.DB.prepare("DELETE FROM documents WHERE id = ? AND status = 'uploading'").bind(id),
+          ]);
+        } catch (cleanupError) {
+          console.error("Document staging cleanup failed", { id, cleanupError });
+        }
+        return json({ error: "The file could not be saved. Please retry this upload." }, 503);
       }
       return json({ ok: true, id }, 201);
     },

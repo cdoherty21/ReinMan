@@ -2,7 +2,7 @@ export const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
 const MAX_EXPANDED_BYTES = 128 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES = 250;
-const DOCUMENT_EXT = /\.(pdf|html?|txt|csv|json)$/i;
+const DOCUMENT_EXT = /\.(pdf|html?|txt|csv|json|docx|xlsx|tsv|png|jpe?g|webp|tiff?)$/i;
 
 export async function* expandArchive(archive: File): AsyncGenerator<File | string> {
   if (archive.size > MAX_ARCHIVE_BYTES) throw new Error("ZIP exceeds 64 MB.");
