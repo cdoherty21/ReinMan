@@ -1,0 +1,38 @@
+# READ-ONLY: lists uploaded documents, or prints one upload's extracted text to this
+# private log, so readers can be built for real document layouts. Changes no data.
+name: reinman-inspect
+on:
+  workflow_dispatch:
+    inputs:
+      id:
+        description: Document id (blank = list recent uploads)
+        required: false
+      grep:
+        description: Optional regex; show only lines around matches
+        required: false
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults: { run: { working-directory: engine } }
+    env:
+      REINMAN_DB: d1
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_TOKEN }}
+      D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+      DOC_ID: ${{ inputs.id }}
+      DOC_GREP: ${{ inputs.grep }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: engine/pyproject.toml }
+      - if: inputs.id != ''
+        run: (command -v pdftotext && command -v tesseract) || (sudo apt-get update && sudo apt-get install -y poppler-utils tesseract-ocr)
+      - run: pip install -e .
+      - run: |
+          args=()
+          [ -n "$DOC_ID" ] && args+=(--id "$DOC_ID")
+          [ -n "$DOC_GREP" ] && args+=(--grep "$DOC_GREP")
+          reinman inspect-documents "${args[@]}"

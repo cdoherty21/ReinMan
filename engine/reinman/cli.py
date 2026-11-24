@@ -228,6 +228,30 @@ def documents_ready(db: Database) -> dict:
     return {"ready": n}
 
 
+def inspect_documents(db: Database, doc_id: int | None, grep: str | None, max_chars: int) -> dict:
+    """READ-ONLY. List uploads, or print one upload's text as the scanner sees it
+    (PDF originals through pdftotext -layout). Used to build readers for real layouts."""
+    if doc_id is None:
+        rows = db.query("SELECT id, uploaded_at, filename, size_bytes, chars, status, track_id, race_date, "
+                        "json_extract(summary,'$.races_linked') AS linked FROM documents ORDER BY id DESC LIMIT 60")
+        return {"documents": rows}
+    doc = db.one("SELECT id, filename, status FROM documents WHERE id=?", [doc_id])
+    if not doc:
+        return {"error": f"no document {doc_id}"}
+    original = documents._original_bytes(db, doc_id)
+    from .document_formats import read_document
+    text, _ = read_document(doc["filename"], original, documents.document_text(db, doc_id))
+    if grep:
+        pat = re.compile(grep, re.I)
+        lines = text.splitlines()
+        hits = [i for i, ln in enumerate(lines) if pat.search(ln)]
+        keep = sorted({j for i in hits[:40] for j in range(max(0, i - 3), min(len(lines), i + 12))})
+        text = "\n".join(f"{j:05d}| {lines[j]}" for j in keep)
+    print(f"===== document {doc_id}: {doc['filename']} ({len(text)} chars shown up to {max_chars}) =====")
+    print(text[:max_chars])
+    return {"id": doc_id, "filename": doc["filename"], "chars": len(text)}
+
+
 def backfill(db: Database, start: str, end: str) -> dict:
     n = 0
     sources = configured_sources()
@@ -251,6 +275,10 @@ def main(argv=None) -> int:
     for c in ("ingest", "results", "predict", "source-check"):
         s = sub.add_parser(c)
         s.add_argument("--date", default=None)
+    s = sub.add_parser("inspect-documents", help="READ-ONLY: list uploads or print one upload's text")
+    s.add_argument("--id", type=int, default=None)
+    s.add_argument("--grep", default=None, help="only show lines around matches of this regex")
+    s.add_argument("--max-chars", type=int, default=60000)
     s = sub.add_parser("backfill")
     s.add_argument("--start", required=True)
     s.add_argument("--end", required=True)
@@ -283,6 +311,7 @@ def main(argv=None) -> int:
         "monitor": lambda: monitor(db),
         "daily": lambda: guarded(db, "daily_cycle", 12, a.force, lambda: daily(db)),
         "documents-ready": lambda: documents_ready(db),
+        "inspect-documents": lambda: inspect_documents(db, a.id, a.grep, a.max_chars),
         "ingest": lambda: job(db, "ingest", do_ingest, db, d),
         "results": lambda: job(db, "results", do_results, db, d),
         "predict": lambda: job(db, "predict", predict.predict_date, db, d),
