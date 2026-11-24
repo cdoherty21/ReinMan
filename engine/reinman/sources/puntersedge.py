@@ -13,15 +13,11 @@ from zoneinfo import ZoneInfo
 
 from ..util import norm_name, parse_iso, parse_odds, parse_post_time, surface_code, to_float
 from ..wagertypes import normalize_wager_type
-from .tracks import TRACKS
+from .tracks import canonical_track_code
 
 log = logging.getLogger(__name__)
 ET = ZoneInfo("America/New_York")
 SYDNEY = ZoneInfo("Australia/Sydney")
-TRACK_NAMES = {norm_name(info["name"]): code for code, info in TRACKS.items()}
-TRACK_NAMES.update({"SARATOGA RACE COURSE": "SAR", "SANTA ANITA PARK": "SA",
-                    "MOUNTAINEER PARK": "MNR", "PHILADELPHIA PARK": "PRX"})
-TVG_CODES = {"PHI": "PRX", "AQU": "AQU", "SAR": "SAR", "SA": "SA"}
 NON_THOROUGHBRED = {"QUARTER HORSE", "QH", "HARNESS", "ARABIAN", "MIXED"}
 
 
@@ -30,7 +26,7 @@ def track_code(row: dict) -> str:
     name = norm_name(venue)
     raw = str(row.get("track_code") or "").upper()
     # Use the same fallback for board and results, which may omit the TVG code.
-    return TRACK_NAMES.get(name) or TVG_CODES.get(raw) or name.replace(" ", "_")
+    return canonical_track_code(venue, raw) or name.replace(" ", "_")
 
 
 def eligible(row: dict, details: dict) -> bool:

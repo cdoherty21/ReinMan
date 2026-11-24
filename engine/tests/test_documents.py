@@ -129,3 +129,17 @@ FL-11/26/2026-3
     summary = json.loads(db.scalar("SELECT summary FROM documents WHERE id=?", [doc_id]))
     assert summary["race_cards_imported"] == ["FL-20261126-3"]
     assert summary["races_linked"] == ["FL-20261126-3"]
+
+
+def test_program_reuses_card_when_track_was_stored_under_old_vendor_code(db):
+    existing = _card()
+    existing["meet"].update(track_id="FINGER_LAKES", track_name="Finger Lakes")
+    ingest.store_card(db, existing, "test")
+    uploaded = _card()
+    imported, linked = documents._store_program_cards(db, [uploaded])
+    assert imported == []
+    assert linked == {"FINGER_LAKES-20261126-3"}
+    assert db.scalar("SELECT COUNT(*) FROM races") == 1
+    doc_id = _upload(db, PROGRAM)
+    summary = documents.scan(db, {"id": doc_id, "program_race_ids": linked}, PROGRAM)
+    assert summary["races_linked"] == ["FINGER_LAKES-20261126-3"]
