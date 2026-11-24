@@ -32,7 +32,8 @@ export function htmlToText(html: string): string {
 
 export async function extractText(file: File): Promise<Extracted> {
   const name = file.name.toLowerCase();
-  if (file.type === "application/pdf" || name.endsWith(".pdf")) {
+  const signature = await file.slice(0, 5).text();
+  if (file.type === "application/pdf" || name.endsWith(".pdf") || signature === "%PDF-") {
     const pdfjs = await import("pdfjs-dist");
     const workerUrl = (await import("pdfjs-dist/build/pdf.worker.min.mjs?url")).default;
     pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;

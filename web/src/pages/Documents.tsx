@@ -7,7 +7,7 @@ import { Empty, ErrorBox, Loading } from "./common";
 type Summary = {
   races_linked?: string[]; horses_matched?: number; workouts?: number; workouts_applied_to_cards?: number;
   payouts?: number; scratch_mentions?: number; canonical_import?: boolean;
-  cards?: number; official?: number; waiting_for_race?: number;
+  cards?: number; official?: number; race_cards_imported?: string[]; waiting_for_race?: number;
 };
 type Doc = {
   id: number; uploaded_at: string; filename: string; chars: number; race_date: string | null; track_id: string | null;
@@ -68,7 +68,7 @@ export function Documents() {
         <h2>Upload</h2>
         <p className="small muted">
           Upload text-based PDFs, HTML, TXT, CSV, or Rein Man JSON up to 8 MB. Rein Man extracts useful racing details
-          and shows linked evidence on race pages.
+          and builds race cards from supported programs. Linked evidence appears on race pages.
         </p>
         <div className="upload-form">
           <input type="file" multiple accept=".pdf,.html,.htm,.txt,.csv,.json,application/pdf,text/*"
@@ -109,7 +109,7 @@ function DocRow({ d, open, onToggle }: { d: Doc; open: boolean; onToggle: () => 
   const s = d.summary;
   const found = !s || s.waiting_for_race ? null : s.canonical_import
     ? `Imported ${s.cards} card(s), ${s.official} official result(s)`
-    : `${s.races_linked?.length ?? 0} race(s), ${s.horses_matched ?? 0} horses, ${s.workouts ?? 0} workouts, ${s.payouts ?? 0} payouts`;
+    : `${s.races_linked?.length ?? 0} race(s), ${s.race_cards_imported?.length ?? 0} imported, ${s.horses_matched ?? 0} horses, ${s.workouts ?? 0} workouts, ${s.payouts ?? 0} payouts`;
   return (
     <>
       <tr>

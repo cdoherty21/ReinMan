@@ -208,6 +208,18 @@ export function Race({ id }: { id: string }) {
         </>
       )}
 
+      {!p && runners.length > 0 && (
+        <section className="card">
+          <h2>Entries</h2>
+          <table className="data">
+            <thead><tr><th>Program</th><th>Horse</th><th>Morning line</th></tr></thead>
+            <tbody>{runners.map((r) => (
+              <tr key={r.program_number}><td>{r.program_number}</td><td>{r.horse_name}</td><td>{odds(r.ml_odds)}</td></tr>
+            ))}</tbody>
+          </table>
+        </section>
+      )}
+
       {Boolean(data.docNotes?.length) && (
         <section className="card doc-notes">
           <h2>From your documents</h2>

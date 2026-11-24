@@ -100,3 +100,32 @@ def test_pocket_pp_waits_for_the_exact_card(db):
     assert documents.process_pending(db) == {"processed": 1, "errors": 0}
     summary = json.loads(db.scalar("SELECT summary FROM documents WHERE id=?", [doc_id]))
     assert summary["races_linked"] == ["FL-20261126-3"]
+
+def test_supported_pdf_program_creates_a_card_with_no_feed(db, monkeypatch):
+    layout = """MAKE SELECTION BY PROGRAM NUMBER     PAST PERFORMANCES
+    Owner and trainer    MORNING THUNDER   2026: 4 1 0 0
+   1 MORNING THUNDER 51
+  5-2
+  Workout(s): 15 Nov 26 FL 4F ft :49.20b 12/31
+    Owner and trainer    SILVER COMET   2026: 3 0 0 1
+   2 SILVER COMET 45
+  3-1
+FL-11/26/2026-3
+"""
+    doc_id = _upload(db, "%PDF-1.3 binary mislabeled as text", filename="FL_4x9PPs")
+    original = b"%PDF-1.3 original"
+    db.insert("document_file_chunks", {"document_id": doc_id, "seq": 0, "bytes": original})
+
+    def extract(data):
+        assert data == original
+        return layout
+
+    monkeypatch.setattr(documents.programs, "pdf_layout", extract)
+    assert documents.process_pending(db) == {"processed": 1, "errors": 0}
+    race = db.one("SELECT source, post_time FROM races WHERE race_id='FL-20261126-3'")
+    assert race == {"source": "uploaded_program", "post_time": None}
+    runners = db.query("SELECT horse_name, ml_odds, extra FROM runners ORDER BY program_number")
+    assert [(r["horse_name"], r["ml_odds"]) for r in runners] == [("MORNING THUNDER", 2.5), ("SILVER COMET", 3)]
+    summary = json.loads(db.scalar("SELECT summary FROM documents WHERE id=?", [doc_id]))
+    assert summary["race_cards_imported"] == ["FL-20261126-3"]
+    assert summary["races_linked"] == ["FL-20261126-3"]
