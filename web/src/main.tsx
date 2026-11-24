@@ -13,7 +13,7 @@ import { Documents } from "./pages/Documents";
 const NAV = [
   ["/", "Today"],
   ["/cards", "Race Cards"],
-  ["/opportunities", "Best Opportunities"],
+  ["/opportunities", "Value"],
   ["/performance", "Performance"],
   ["/history", "History"],
   ["/documents", "Documents"],
