@@ -9,7 +9,7 @@ on:
   schedule:
     - cron: "17 * * * *"
 concurrency:
-  group: reinman-db-writer
+  group: reinman-upload-inspection
   cancel-in-progress: false
 permissions:
   contents: read
