@@ -5,6 +5,8 @@ export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
   REINMAN_PASSWORD?: string;
+  /** "true" turns the password login off: anyone with the link can use the app. */
+  AUTH_DISABLED?: string;
   SESSION_SECRET?: string;
   GITHUB_TOKEN?: string;
   GITHUB_REPO?: string;
@@ -355,6 +357,7 @@ async function handleAuth(req: Request, env: Env, url: URL): Promise<Response | 
 }
 
 async function isAuthed(req: Request, env: Env): Promise<boolean> {
+  if (env.AUTH_DISABLED === "true") return true;
   return verifySession(env.SESSION_SECRET ?? "", readCookie(req, COOKIE));
 }
 
@@ -367,7 +370,7 @@ export default {
       const authRes = await handleAuth(req, env, url);
       if (authRes) return withSecurity(authRes);
       const authed = await isAuthed(req, env);
-      if (url.pathname === "/api/session") return withSecurity(json({ authenticated: authed }));
+      if (url.pathname === "/api/session") return withSecurity(json({ authenticated: authed, authRequired: env.AUTH_DISABLED !== "true" }));
       if (url.pathname.startsWith("/api/")) {
         if (!authed) return withSecurity(json({ error: "unauthorized" }, 401));
         if (req.method === "POST" && req.headers.get("Content-Type")?.includes("application/json") !== true)
