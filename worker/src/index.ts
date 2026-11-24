@@ -339,7 +339,12 @@ const routes: [string, RegExp, Handler][] = [
                 (SELECT COALESCE(SUM(w.cost),0) FROM wagers w WHERE w.prediction_id = p.prediction_id) AS wagered,
                 (SELECT COALESCE(SUM(wg.payout),0) FROM wagers w JOIN wager_grades wg ON wg.wager_id = w.wager_id WHERE w.prediction_id = p.prediction_id) AS returned,
                 (SELECT COUNT(*) FROM wagers w LEFT JOIN wager_grades wg ON wg.wager_id = w.wager_id
-                 WHERE w.prediction_id = p.prediction_id AND wg.payout IS NULL) AS pending_wagers
+                 WHERE w.prediction_id = p.prediction_id AND wg.payout IS NULL) AS pending_wagers,
+                (SELECT COUNT(*) FROM wagers w WHERE w.prediction_id = p.prediction_id) AS wager_count,
+                (SELECT w.wager_type FROM wagers w WHERE w.prediction_id = p.prediction_id ORDER BY w.wager_id LIMIT 1) AS wager_type,
+                (SELECT w.selection FROM wagers w WHERE w.prediction_id = p.prediction_id ORDER BY w.wager_id LIMIT 1) AS wager_selection,
+                (SELECT wg.status FROM wagers w LEFT JOIN wager_grades wg ON wg.wager_id = w.wager_id
+                 WHERE w.prediction_id = p.prediction_id ORDER BY w.wager_id LIMIT 1) AS wager_status
          FROM locks l JOIN races r ON r.race_id = l.race_id JOIN predictions p ON p.prediction_id = l.prediction_id
          LEFT JOIN grades g ON g.race_id = l.race_id
          WHERE r.race_date BETWEEN ? AND ? AND (? IS NULL OR r.track_id = ?)
