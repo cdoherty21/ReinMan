@@ -27,7 +27,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from .db import Database
-from . import past_performances, programs
+from . import charts, past_performances, programs
 from .document_formats import read_document
 from .document_extracts import partial_extract
 from .document_tables import table_cards
@@ -410,6 +410,16 @@ def process_pending(db: Database, limit: int = 20, touched: set[str] | None = No
                     raise ValueError("No readable racing text recovered. Try a clearer scan or an original program.")
                 if original and doc["chars"] != len(text):
                     _replace_text(db, doc["id"], text)
+                if charts.is_chart(text):
+                    summary = charts.apply(db, text, doc["filename"], doc["id"])
+                    if not summary["races_linked"] and not summary["chart_lines"]:
+                        summary["message"] = "Result chart read, but no race could be matched or stored."
+                    db.execute("UPDATE documents SET status='processed', processed_at=?, summary=?, error=NULL WHERE id=?",
+                               [now_iso(), json.dumps(summary), doc["id"]])
+                    if touched is not None:
+                        touched.update(summary["races_linked"])
+                    done += 1
+                    continue
                 partial = partial_extract(text)
                 if partial:
                     summary = _scan_partial(db, doc["id"], partial)

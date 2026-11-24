@@ -155,6 +155,17 @@ OTB reads stop for the rest of the UTC day; the Performance page's automation lo
 an `otb_blocked` entry. OTB track ids are learned from its daily thoroughbred index and
 kept in the `otb_tracks` table. See [DATA_SOURCES](DATA_SOURCES.md) for the terms review.
 
+### Upload Equibase result charts
+
+On equibase.com open a day's results and save the free full chart PDF (all races), or use
+`https://www.equibase.com/premium/eqbPDFChartPlus.cfm?RACE=A&BorP=P&TID=PRX&CTRY=USA&DT=MM/DD/YYYY&DAY=D&STYLE=EQB`
+with the track code and date. Upload it on the Documents page. The scan reads every race:
+official results for races whose card is in Rein Man (other sources' results gain the
+chart's times), and a running line for every starter, used in that horse's next races.
+Dead heats, disqualifications and races whose numbers or names don't match the card are
+not stored as results. To re-read charts uploaded before this reader existed, run the
+`reinman-documents` workflow with rescan.
+
 ### Import OffTrackBetting.com results and payouts
 
 Open an [OTB results page](https://www.offtrackbetting.com/results/) with a single race

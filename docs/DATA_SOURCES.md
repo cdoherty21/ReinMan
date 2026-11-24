@@ -51,6 +51,14 @@ bypasses paywalls, and never fabricates missing data.
 
   OTB's [RSS results feed](https://www.offtrackbetting.com/rss.html) is not used: it
   carries headlines for major stakes only, and its terms limit it to display with links.
+* **Equibase result charts you download yourself** (the free full chart PDF on
+  equibase.com, for personal use) can be uploaded on the Documents page. Rein Man reads
+  each race's finish order, payoffs, scratches, fractional and final times, and every
+  starter's running line: position and lengths behind at each call, odds, weight,
+  jockey and trip comment (`engine/reinman/charts.py`). Results are stored only when the
+  card matches; running lines are kept per horse in `chart_lines` and feed that horse's
+  later races (early position, pace scenario, beaten lengths, trouble). Rein Man never
+  downloads charts itself: Equibase's terms prohibit automated access.
 * [Equibase's 2023 dataset](https://www.jockeyclub.com/default.asp?area=10&section=Resources&story=1452)
   was announced as complimentary for research and development. Its contents
   require conversion to canonical JSON before import.

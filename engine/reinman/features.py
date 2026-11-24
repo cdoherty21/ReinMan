@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .db import Database
-from .util import days_between
+from .util import days_between, norm_name
 
 OFF_TRACK = ("SLOPPY", "MUDDY", "SLOP", "MUD", "WET", "SEALED", "HEAVY", "YIELDING", "SOFT")
 NAN = float("nan")
@@ -119,6 +119,7 @@ class HistoryBuilder:
     starts: dict = field(default_factory=lambda: defaultdict(list))         # horse -> [Start]
     cnt: dict = field(default_factory=lambda: defaultdict(Counter2))        # key -> Counter2
     asof: str = "9999-12-31"   # rates only use races strictly before this date
+    chart: dict = field(default_factory=dict)  # horse name key -> result-chart lines (charts.py)
 
     def rate(self, key, prior: float, k: float, since: str | None = None) -> float:
         c = self.cnt.get(key)
@@ -209,6 +210,21 @@ def _parse_extra(r: dict) -> dict:
         except ValueError:
             return {}
     return e
+
+
+def _with_chart_lines(program_lines: list[dict], chart_lines: list[dict]) -> list[dict]:
+    """Program past performances plus result-chart lines for the same horse. A race in
+    both keeps the program line (it has the speed figure) and gains the chart's lengths."""
+    by_key = {(p.get("date"), p.get("track")): dict(p) for p in program_lines}
+    for c in chart_lines:
+        key = (c.get("date"), c.get("track"))
+        if key in by_key:
+            for k in ("beaten_lengths", "call_lengths", "final_time"):
+                if by_key[key].get(k) is None and c.get(k) is not None:
+                    by_key[key][k] = c[k]
+        else:
+            by_key[key] = c
+    return list(by_key.values())
 
 
 def featurize_race(h: HistoryBuilder, race: dict, runners: list[dict]) -> tuple[np.ndarray, list[dict]]:
@@ -316,7 +332,9 @@ def featurize_race(h: HistoryBuilder, race: dict, runners: list[dict]) -> tuple[
 
         # ---- optional rich data ----
         ex = _parse_extra(r)
-        pps = sorted([p for p in ex.get("past_performances") or [] if str(p.get("date", "")) < d],
+        pps = sorted([p for p in _with_chart_lines(ex.get("past_performances") or [],
+                                                   h.chart.get(norm_name(r.get("horse_name")), []))
+                      if str(p.get("date", "")) < d],
                      key=lambda p: p["date"], reverse=True)
         if pps:
             figs = [p.get("speed_fig") for p in pps if p.get("speed_fig") is not None]
@@ -417,8 +435,13 @@ def load_races(db: Database, start: str | None = None, end: str | None = None,
     return races, runners, fin, pay
 
 
+def _chart_lines(db: Database) -> dict:
+    from .charts import load_lines
+    return load_lines(db)
+
+
 def build_history(db: Database, before: str) -> HistoryBuilder:
-    h = HistoryBuilder()
+    h = HistoryBuilder(chart=_chart_lines(db))
     races, runners, fin, _ = load_races(db, end=_sub_days(before, 1), official_only=True)
     for rid, race in races.items():
         if fin.get(rid):
@@ -429,7 +452,7 @@ def build_history(db: Database, before: str) -> HistoryBuilder:
 def build_dataset(db: Database, start: str | None = None, end: str | None = None,
                   min_field: int = 3) -> list[RaceSample]:
     """Chronological samples for official races in [start, end], features point-in-time."""
-    h = HistoryBuilder()
+    h = HistoryBuilder(chart=_chart_lines(db))
     races, runners, fin, pay = load_races(db, end=end, official_only=True)
     by_date = defaultdict(list)
     for rid, race in races.items():
