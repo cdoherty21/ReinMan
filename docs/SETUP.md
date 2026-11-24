@@ -1,6 +1,6 @@
 # Setup & Deployment
 
-Everything below runs on free tiers except the racing-data subscription.
+Everything below runs on free tiers.
 
 ## 1. Cloudflare (Workers + D1 + Cron) — free
 ```bash
@@ -19,12 +19,15 @@ npm run deploy                              # → https://rein-man.<your-subdoma
 a second factor; login attempts are throttled (8 per 15 min per IP). Missing secrets = no
 one can log in (fails closed).
 
-## 2. Racing data — The Racing API North America add-on (~£49.99/mo)
-Subscribe at theracingapi.com, then verify the adapter against live data:
+## 2. Racing data
+No live source is connected (no free, permitted U.S. feed exists — see
+[DATA_SOURCES.md](DATA_SOURCES.md)). Load data you're allowed to use:
 ```bash
 cd engine && pip install -e .
-RACINGAPI_USERNAME=… RACINGAPI_PASSWORD=… reinman source-check --date <a race day>
+REINMAN_DB=d1 CLOUDFLARE_ACCOUNT_ID=… CLOUDFLARE_API_TOKEN=… D1_DATABASE_ID=… reinman import cards.json
 ```
+The free Equibase 2023 research dataset (request it on equibase.com) is the way to build
+the historical database for training and backtesting.
 
 ## 3. GitHub Actions — secrets (repo → Settings → Secrets and variables → Actions)
 | Secret | Value |
@@ -33,7 +36,6 @@ RACINGAPI_USERNAME=… RACINGAPI_PASSWORD=… reinman source-check --date <a rac
 | `D1_DATABASE_ID` | from `wrangler d1 create` |
 | `CLOUDFLARE_D1_TOKEN` | API token with **Account → D1 → Edit** only |
 | `CLOUDFLARE_DEPLOY_TOKEN` | token with Workers Scripts Edit + D1 Edit (for `reinman-deploy`) |
-| `RACINGAPI_USERNAME` / `RACINGAPI_PASSWORD` | The Racing API credentials |
 
 Optional repository variable `NWS_USER_AGENT`, e.g. `(rein-man, you@example.com)` — NWS
 asks automated clients to identify themselves.
@@ -50,14 +52,10 @@ The Worker then dispatches `reinman-monitor` every 15 minutes from 10am to 2am E
 
 ## 5. Build the historical database (Phase 2)
 ```bash
-REINMAN_DB=d1 CLOUDFLARE_ACCOUNT_ID=… CLOUDFLARE_API_TOKEN=… D1_DATABASE_ID=… \
-RACINGAPI_USERNAME=… RACINGAPI_PASSWORD=… reinman backfill --start 2026-06-01 --end 2026-11-23
-reinman train      # trains + validates; promotes only if it beats the baseline out-of-sample
-reinman backtest   # walk-forward, stored and shown on the Performance page
+reinman import history.json   # licensed data in the canonical format
+reinman train                 # promotes only if it beats the baseline out-of-sample
+reinman backtest              # walk-forward, shown on the Performance page
 ```
-How far back the provider's North American data goes is not documented — the backfill
-log shows what came back. Licensed files (e.g. Equibase's 2023 dataset converted to the
-canonical format) can be loaded with `reinman import`.
 
 ## Local development
 ```bash
@@ -75,5 +73,4 @@ The engine can point at the local D1 file with
 | Cloudflare Workers, D1, Cron, Access | $0 (free tier: 100k requests/day, 5 GB D1) |
 | GitHub Actions | $0 for public repos; private repos get 2,000 free minutes/month. A monitor run takes ~1–2 min; ~4 runs/hour over 16 racing hours ≈ 2,000–3,800 min/month. On a private repo, raise `DISPATCH_EVERY_MIN` to 30 or use a self-hosted runner. |
 | NWS weather | $0 |
-| The Racing API NA add-on | ~£49.99/month (the only recurring cost) |
 | AI API calls | $0 — all analysis text is generated deterministically |

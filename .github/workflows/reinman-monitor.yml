@@ -21,8 +21,6 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_TOKEN }}
       D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
-      RACINGAPI_USERNAME: ${{ secrets.RACINGAPI_USERNAME }}
-      RACINGAPI_PASSWORD: ${{ secrets.RACINGAPI_PASSWORD }}
       NWS_USER_AGENT: ${{ vars.NWS_USER_AGENT || '(rein-man personal handicapping app)' }}
     steps:
       - uses: actions/checkout@v4

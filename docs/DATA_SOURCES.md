@@ -8,7 +8,7 @@ bypasses paywalls, and never fabricates missing data.
 
 | Source | Data | History | Update freq. | Access / restrictions | Cost | Reliability | Status in Rein Man |
 |---|---|---|---|---|---|---|---|
-| **The Racing API — North America add-on** | Meets, entries (ML & live odds, W/P/S pool amounts, scratches, jockey/trainer, equipment, medication, weight, sire/dam/damsire, track condition, weather, wager pools offered), results (order of finish, W/P/S payoffs, exotic payoffs incl. multi-race, fractions, scratches) | Results endpoint by meet; depth of North American history not published — verify with `reinman backfill` | Near real time (has `mtp`, live odds) | REST + HTTP Basic auth, 5 req/s; licensed for API use | **£49.99/month** add-on (on any plan, incl. Free) | Commercial API with published OpenAPI spec | **Implemented** (`sources/racingapi.py`) — primary live source |
+| **The Racing API — North America add-on** | Meets, entries (ML & live odds, W/P/S pool amounts, scratches, jockey/trainer, equipment, medication, weight, sire/dam/damsire, track condition, weather, wager pools offered), results (order of finish, W/P/S payoffs, exotic payoffs incl. multi-race, fractions, scratches) | Results endpoint by meet; depth of North American history not published — verify with `reinman backfill` | Near real time (has `mtp`, live odds) | REST + HTTP Basic auth, 5 req/s; licensed for API use | **£49.99/month** add-on (on any plan, incl. Free) | Commercial API with published OpenAPI spec | **Removed** — U.S. data is not free (needs the paid North America add-on); the adapter was deleted at the owner's request |
 | **National Weather Service** (api.weather.gov) | Hourly forecast: temperature, precipitation probability, description | No archive (forecast/observations only) | Hourly | Public, free, no key; asks for a User-Agent | Free | Government service, occasional outages | **Implemented** (`sources/nws.py`) — supplements missing weather |
 | **Canonical JSON import** | Anything you're licensed to use, incl. rich past performances (speed/pace figures, call positions, trouble, workouts) | Whatever the file holds | Manual / scripted | Your license terms | Depends | — | **Implemented** (`sources/canonical.py`, `docs/DATA_FORMAT.md`) |
 | **Equibase** (equibase.com) | Entries, results, charts, PPs | Decades | Real time | Terms of Use prohibit robots, spiders, scrapers or any automated access; they've treated scraping as a breach and blocked it | Free to view; data products paid/licensed | Official industry database | **Not used** (ToS). Licensed data can be imported via the canonical format |
@@ -23,31 +23,12 @@ bypasses paywalls, and never fabricates missing data.
 ## What this means in practice
 
 * **There is no free, permitted, comprehensive source of U.S. thoroughbred entries,
-  past performances and results.** The cheapest permitted automated route found is
-  The Racing API's North America add-on (about £50/month). Cloudflare, GitHub Actions
-  and NWS remain $0, so that subscription is the only recurring cost.
-* **Past performances and figures are the gap.** The Racing API's North American
-  entries don't include past-performance lines, speed/pace figures, running positions,
-  beaten lengths, trouble comments or workouts. Rein Man builds horse, jockey, trainer,
-  sire and post-position history from the results it collects every day (and from any
-  backfill), and labels the missing factors as *unavailable* on every race page.
-  Richer data can be loaded through the canonical importer from a licensed source.
-* **Model quality grows with history.** Until enough graded races exist for out-of-sample
-  validation, predictions come from the clearly labeled `v0-market-baseline` model.
-
-## Verifying the adapter against live data
-
-The North America schemas are published, but some details are not specified (for
-example, the exact odds-string format and the order of finishers in results). After
-subscribing, run:
-
-```bash
-reinman source-check --date 2026-11-28
-```
-
-It reports parse rates for post times, distances, surfaces and morning-line odds, plus a
-sample race and result, so you can confirm every adapter assumption before trusting
-the data. Tests in `tests/test_util_and_sources.py` pin the current interpretation.
+  odds, past performances and results.** Every free website that has them either forbids
+  automated collection or blocks it; Rein Man does not scrape around that.
+* **Rein Man therefore has no live feed.** Data is loaded with `reinman import`.
+* **Free and permitted:** Equibase's complimentary 2023 dataset (full-year past
+  performances + result charts) for training and backtesting, and NWS weather.
+* If a free, permitted feed appears, adding it is one adapter class in `engine/reinman/sources/`.
 
 ## Sources consulted
 - Equibase Terms of Use — https://www.equibase.com/about/terms.cfm

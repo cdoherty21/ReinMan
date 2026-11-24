@@ -11,9 +11,9 @@
                 │ D1 REST API
  GitHub Actions │ (free minutes)                       External data
  ┌──────────────┴───────────────────────────┐          ┌──────────────────────────────┐
- │ Python engine `reinman`                   │◀─────────│ The Racing API (NA add-on)   │
+ │ Python engine `reinman`                   │◀─────────│ canonical JSON (reinman import)│
  │  monitor (every 15 min, racing hours)     │          │ NWS api.weather.gov          │
- │  daily (cards, results, grading, stats)   │          │ canonical JSON (licensed)    │
+ │  daily (cards, results, grading, stats)   │          │ (no live feed connected)     │
  │  learn (weekly train + gate + backtest)   │          └──────────────────────────────┘
  └───────────────────────────────────────────┘
 ```

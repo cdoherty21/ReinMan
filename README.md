@@ -10,7 +10,7 @@ after it beats the old one on races it has never seen.
 
 | Phase | State |
 |---|---|
-| 1 Data research & infrastructure | Done — see [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md). No free, permitted, comprehensive U.S. source exists; primary source is The Racing API NA add-on (paid). |
+| 1 Data research & infrastructure | Done — see [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md). No free, permitted, comprehensive U.S. source exists. Rein Man has **no live data source**; data is loaded with `reinman import`. |
 | 2 Historical database | Done — D1/SQLite schema with integrity triggers; `reinman backfill` / `reinman import`. Needs the data subscription to fill. |
 | 3 Prediction engine | Done — exploded conditional logit + LightGBM + market blend, discounted-Harville finish model, Monte Carlo. |
 | 4 Backtesting | Done — chronological walk-forward with leakage tests; results stored and displayed. |
@@ -21,14 +21,14 @@ after it beats the old one on races it has never seen.
 | 9 Cloudflare deployment | Ready — Worker + D1 + Cron + private auth; deploy steps in [docs/SETUP.md](docs/SETUP.md). Not deployed from this environment (needs your Cloudflare account). |
 | 10 Continuous learning | Done — weekly candidate training, out-of-sample promotion gate, drift monitoring, audit trail. |
 
-## Clearly unavailable with the current data source
-Speed figures, pace figures, running positions (so **projected pace**), beaten lengths,
-trouble comments and workouts are **not provided** by The Racing API's North American
-endpoints. Rein Man shows them as unavailable on every race rather than guessing; they
-switch on automatically when a licensed source supplies them via the canonical importer.
-Lifetime history before Rein Man started collecting is limited to what backfill returns.
-Exotic and multi-race EV are estimates (no live probables/will-pays) and are only
-produced when live tote odds exist.
+## Data: what's missing
+Rein Man has **no live data source**. Every source with U.S. race cards, odds and results
+either charges for automated access or forbids it, so none is connected. Data goes in
+through `reinman import` (the canonical JSON format in `docs/DATA_FORMAT.md`). The free,
+permitted option is Equibase's complimentary 2023 research dataset (past performances
+and result charts), which trains and backtests the model; an importer will be written
+for it once its file format is in hand. Daily picks need daily cards, which means
+importing them until a free, permitted feed exists.
 
 ## Daily automation
 | When | What | Where |
