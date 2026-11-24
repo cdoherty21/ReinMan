@@ -276,3 +276,5 @@ sup { font-size: 0.6rem; color: var(--ink-3); margin-left: 2px; }
 .pre { white-space: pre-wrap; }
 .ok { color: var(--green-600); }
 .login-card .linkish { align-self: center; }
+.pp { margin-top: 0.6rem; border-top: 1px dashed var(--line); padding-top: 0.5rem; }
+.pp h4 { margin-bottom: 0.3rem; }

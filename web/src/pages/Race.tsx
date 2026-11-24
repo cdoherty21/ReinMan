@@ -13,7 +13,55 @@ type Runner = {
   program_number: string; post_position: number | null; horse_name: string; jockey_name: string | null;
   trainer_name: string | null; sire: string | null; dam: string | null; weight: number | null; equipment: string | null;
   medication: string | null; ml_odds: number | null; live_odds: number | null; scratched: number;
+  extra?: string | null;
 };
+type PastPerf = {
+  date: string; track: string; distance_raw: string; condition: string; speed_fig: number | null;
+  post_position: number; call_positions: number[]; finish: number; field_size: number | null;
+  odds: number; favorite: boolean; comment: string | null; trouble: boolean;
+};
+
+function pastPerformances(r: Runner | undefined): PastPerf[] {
+  if (!r?.extra) return [];
+  try {
+    return (JSON.parse(r.extra).past_performances ?? []) as PastPerf[];
+  } catch {
+    return [];
+  }
+}
+
+function PastPerformances({ rows }: { rows: PastPerf[] }) {
+  if (!rows.length) return null;
+  const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+  return (
+    <div className="pp">
+      <h4>Past performances <span className="muted small">(from your uploaded programs)</span></h4>
+      <div className="table-wrap">
+        <table className="data compact">
+          <thead>
+            <tr><th>Date</th><th>Track</th><th>Dist</th><th>Cond</th><th className="num">Fig</th><th>Calls</th>
+              <th>Finish</th><th className="num">Odds</th><th className="hide-sm">Comment</th></tr>
+          </thead>
+          <tbody>
+            {rows.slice(0, 8).map((p) => (
+              <tr key={`${p.date}-${p.track}`} className={p.finish === 1 ? "is-pick" : ""}>
+                <td>{p.date.slice(5)}<span className="muted">/{p.date.slice(2, 4)}</span></td>
+                <td>{p.track}</td>
+                <td>{p.distance_raw}</td>
+                <td>{p.condition}</td>
+                <td className="num">{p.speed_fig ?? "—"}</td>
+                <td className="mono">{p.call_positions.slice(0, -1).join("-")}</td>
+                <td><b>{ordinal(p.finish)}</b>{p.field_size ? <span className="muted"> of {p.field_size}</span> : null}</td>
+                <td className="num">{p.favorite ? "*" : ""}{p.odds.toFixed(2)}</td>
+                <td className="hide-sm small">{p.trouble && <span className="tag scr">trouble</span>} {p.comment}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 type Wager = {
   wager_id: number; wager_type: string; structure: string; selection: string; combos: number; base_amount: number;
   cost: number; est_prob: number; est_return: number | null; ev: number | null; rationale: string | null; legs: string;
@@ -161,6 +209,7 @@ export function Race({ id }: { id: string }) {
                                   </p>
                                 </div>
                               </div>
+                              <PastPerformances rows={pastPerformances(r)} />
                             </td>
                           </tr>
                         )}

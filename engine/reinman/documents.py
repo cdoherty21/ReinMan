@@ -27,7 +27,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from .db import Database
-from . import programs
+from . import past_performances, programs
 from .document_formats import read_document
 from .document_extracts import partial_extract
 from .document_tables import table_cards
@@ -434,6 +434,9 @@ def process_pending(db: Database, limit: int = 20, touched: set[str] | None = No
                     continue
                 summary = scan(db, doc, text)
                 summary["race_cards_imported"] = imported
+                pp = past_performances.apply(db, text, sorted(set(summary["races_linked"]) | set(imported)))
+                if pp["horses"]:
+                    summary["past_performances"] = pp
                 if not summary["races_linked"] and not imported:
                     if original is None and doc["filename"].lower().endswith(".pdf"):
                         summary["message"] = "Saved text did not match a race. Upload the original PDF for layout extraction."

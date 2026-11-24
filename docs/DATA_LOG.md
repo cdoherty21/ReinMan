@@ -19,3 +19,9 @@ not recorded in the repository. The cards are consistent with official race prog
 with the six uploaded files above. **Owner: confirm the source here.**
 
 These branches are kept (not deleted) because they are the only record of what ran.
+
+## 2026-11-24 — past-performance reader rollout (from `main`)
+
+| When (UTC) | Commit | Workflow | What it did |
+|---|---|---|---|
+| ~15:00 | past-performance reader merge | reinman-documents (rescan) | Rescanned all uploads so existing programs (FingerLakes1124.pdf, PRX 4x9PPs) attach past performances (speed figures, running positions, finishes, odds, trip comments) to their runners. Gap-filling only; existing cards are not overwritten. |
