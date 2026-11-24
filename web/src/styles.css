@@ -236,3 +236,5 @@ sup { font-size: 0.6rem; color: var(--ink-3); margin-left: 2px; }
 .upload-form label.check { flex-direction: row; align-items: center; gap: 0.4rem; color: var(--ink-2); font-size: 0.85rem; max-width: 34rem; }
 .doc-notes { grid-column: 1 / -1; border-top: 1px dashed var(--line); padding-top: 0.4rem; }
 .pre { white-space: pre-wrap; }
+.ok { color: var(--green-600); }
+.login-card .linkish { align-self: center; }

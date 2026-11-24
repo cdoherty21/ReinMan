@@ -13,13 +13,26 @@ npx wrangler secret put REINMAN_PASSWORD -c worker/wrangler.jsonc   # your login
 npx wrangler secret put SESSION_SECRET  -c worker/wrangler.jsonc   # random 32+ chars: openssl rand -hex 32
 npm run deploy                              # → https://rein-man.<your-subdomain>.workers.dev
 ```
-**Login:** username + password. Set three Worker secrets (Cloudflare → Workers & Pages →
-rein-man → Settings → Variables and Secrets, type **Secret**): `REINMAN_USERNAME`,
-`REINMAN_PASSWORD` and `SESSION_SECRET` (a long random string you never type). Until all
-three exist, nobody can log in. Sessions last 30 days in a signed, HttpOnly,
-SameSite=Strict cookie; failed logins are throttled (8 per 15 min per IP). Setting the
-`AUTH_DISABLED` var to `"true"` removes the login entirely (not recommended: the free
-PuntersEdge licence is personal use, and uploads would be open to anyone).
+**Login:** email + password, with a "Forgot password?" email. Add these Worker secrets
+(Cloudflare → Workers & Pages → rein-man → Settings → Variables and Secrets, type **Secret**):
+
+| Secret | Value |
+|---|---|
+| `REINMAN_EMAIL` | the email you log in with (reset emails go here) |
+| `REINMAN_PASSWORD` | your first password (used until you reset it) |
+| `SESSION_SECRET` | a long random string you never type (also keys the stored password hash) |
+| `RESEND_API_KEY` | free API key from resend.com, for reset emails |
+
+Make the free Resend account with the **same email** as `REINMAN_EMAIL`: without your own
+domain, Resend's test sender (`onboarding@resend.dev`) only delivers to the account owner.
+With a domain verified in Resend, set the `MAIL_FROM` var (e.g. `Rein Man <login@yourdomain>`).
+
+A reset link works once, for 30 minutes. After a reset the new password is stored in D1 as a
+salted HMAC keyed with `SESSION_SECRET` (never readable), and every other signed-in browser
+is signed out. Changing `SESSION_SECRET` later invalidates that stored password: use
+"Forgot password?" afterwards. Failed logins are throttled (8 per 15 min per IP); reset
+emails are limited to 3 per hour. `AUTH_DISABLED: "true"` removes login entirely (not
+recommended).
 
 ## Documents
 The **Documents** page uploads PDFs (with real text), HTML, TXT, CSV or Rein Man JSON. The

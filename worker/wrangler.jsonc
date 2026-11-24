@@ -25,8 +25,8 @@
   // dispatch the GitHub Actions "monitor" workflow (reliable clock for the Python job).
   "triggers": { "crons": ["*/5 * * * *"] },
   "vars": {
-    // "false" = username + password login (secrets REINMAN_USERNAME, REINMAN_PASSWORD,
-    // SESSION_SECRET). "true" = no login: anyone with the link can use the app.
+    // "false" = email + password login (secrets REINMAN_EMAIL, REINMAN_PASSWORD, SESSION_SECRET,
+    // and RESEND_API_KEY for reset emails). "true" = no login: anyone with the link can use the app.
     "AUTH_DISABLED": "false",
     "GITHUB_REPO": "cdoherty21/ReinMan",
     "GITHUB_WORKFLOW": "reinman-monitor.yml",

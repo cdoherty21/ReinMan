@@ -39,41 +39,99 @@ function Logo({ size = 40 }: { size?: number }) {
   return <img src="/logo.svg" width={size} height={size} alt="" aria-hidden="true" />;
 }
 
-function Login({ onDone }: { onDone: () => void }) {
-  const [user, setUser] = useState("");
-  const [pw, setPw] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+function AuthCard({ children, onSubmit }: { children: React.ReactNode; onSubmit: (e: React.FormEvent) => void }) {
   return (
     <main className="login">
-      <form
-        className="login-card"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setBusy(true);
-          setErr(null);
-          try {
-            await api("/api/login", { method: "POST", body: JSON.stringify({ username: user, password: pw }) });
-            onDone();
-          } catch (x) {
-            setErr((x as Error).message || "Sign-in failed");
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
+      <form className="login-card" onSubmit={onSubmit}>
         <Logo size={72} />
         <h1>Rein Man</h1>
         <p className="tagline">The Intelligence Behind the Odds.</p>
-        <label htmlFor="user">Username</label>
-        <input id="user" autoComplete="username" autoCapitalize="none" value={user} onChange={(e) => setUser(e.target.value)} autoFocus />
-        <label htmlFor="pw">Password</label>
-        <input id="pw" type="password" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} />
-        {err && <p className="error" role="alert">{err}</p>}
-        <button className="btn primary" disabled={busy || !pw || !user}>{busy ? "Checking…" : "Enter"}</button>
-        <p className="muted small">Private handicapping system. Authorized use only.</p>
+        {children}
       </form>
     </main>
+  );
+}
+
+function Login({ onDone }: { onDone: () => void }) {
+  const [mode, setMode] = useState<"login" | "forgot">("login");
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setErr(null);
+    setMsg(null);
+    try {
+      if (mode === "login") {
+        await api("/api/login", { method: "POST", body: JSON.stringify({ email, password: pw }) });
+        onDone();
+      } else {
+        const r = await api<{ message: string }>("/api/forgot", { method: "POST", body: JSON.stringify({ email }) });
+        setMsg(r.message);
+      }
+    } catch (x) {
+      setErr((x as Error).message || "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <AuthCard onSubmit={submit}>
+      <label htmlFor="email">Email</label>
+      <input id="email" type="email" autoComplete="username" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
+      {mode === "login" && (
+        <>
+          <label htmlFor="pw">Password</label>
+          <input id="pw" type="password" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+        </>
+      )}
+      {err && <p className="error" role="alert">{err}</p>}
+      {msg && <p className="ok" role="status">{msg}</p>}
+      <button className="btn primary" disabled={busy || !email || (mode === "login" && !pw)}>
+        {busy ? "One moment…" : mode === "login" ? "Sign in" : "Email me a reset link"}
+      </button>
+      <button type="button" className="linkish small" onClick={() => { setMode(mode === "login" ? "forgot" : "login"); setErr(null); setMsg(null); }}>
+        {mode === "login" ? "Forgot password?" : "Back to sign in"}
+      </button>
+      <p className="muted small">Private handicapping system. Authorized use only.</p>
+    </AuthCard>
+  );
+}
+
+function Reset() {
+  const token = new URLSearchParams(location.search).get("token") ?? "";
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErr(null);
+    if (pw !== pw2) return setErr("The two passwords don't match.");
+    setBusy(true);
+    try {
+      await api("/api/reset", { method: "POST", body: JSON.stringify({ token, password: pw }) });
+      location.replace("/");
+    } catch (x) {
+      setErr((x as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <AuthCard onSubmit={submit}>
+      <p className="small">Choose a new password (at least 10 characters). Every other signed-in browser will be signed out.</p>
+      <label htmlFor="pw">New password</label>
+      <input id="pw" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} autoFocus />
+      <label htmlFor="pw2">Repeat new password</label>
+      <input id="pw2" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} />
+      {!token && <p className="error">This link is missing its reset code. Use the link from the email.</p>}
+      {err && <p className="error" role="alert">{err}</p>}
+      <button className="btn primary" disabled={busy || !token || pw.length < 10 || !pw2}>{busy ? "Saving…" : "Set new password"}</button>
+    </AuthCard>
   );
 }
 
@@ -144,6 +202,7 @@ function App() {
     window.addEventListener("reinman:logout", out);
     return () => window.removeEventListener("reinman:logout", out);
   }, []);
+  if (location.pathname === "/reset") return <Reset />;
   if (auth === null) return <div className="boot"><Logo size={56} /></div>;
   return auth ? <Shell authRequired={authRequired} /> : <Login onDone={() => setAuth(true)} />;
 }

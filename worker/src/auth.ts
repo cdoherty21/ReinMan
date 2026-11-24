@@ -1,5 +1,6 @@
-// Private, single-user authentication: password -> HMAC-signed session cookie.
-// Fails closed: if REINMAN_PASSWORD or SESSION_SECRET is missing, nobody gets in.
+// Private, single-user authentication: email + password -> HMAC-signed session cookie.
+// Fails closed: without REINMAN_EMAIL and SESSION_SECRET nobody gets in.
+// Sessions carry an "epoch"; bumping it (on password reset) signs out every browser.
 
 const enc = new TextEncoder();
 export const COOKIE = "reinman_session";
@@ -27,16 +28,36 @@ export function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-export async function makeSession(secret: string, now = Date.now()): Promise<string> {
+export async function makeSession(secret: string, epoch = 0, now = Date.now()): Promise<string> {
   const exp = String(now + SESSION_DAYS * 86400_000);
-  return `${exp}.${await hmac(secret, `reinman:${exp}`)}`;
+  return `${exp}.${epoch}.${await hmac(secret, `reinman:${exp}:${epoch}`)}`;
 }
 
-export async function verifySession(secret: string, token: string | null, now = Date.now()): Promise<boolean> {
+export async function verifySession(secret: string, token: string | null, epoch = 0, now = Date.now()): Promise<boolean> {
   if (!secret || !token) return false;
-  const [exp, sig] = token.split(".");
-  if (!exp || !sig || !/^\d+$/.test(exp) || Number(exp) < now) return false;
-  return timingSafeEqual(sig, await hmac(secret, `reinman:${exp}`));
+  const [exp, ep, sig] = token.split(".");
+  if (!exp || !ep || !sig || !/^\d+$/.test(exp) || !/^\d+$/.test(ep) || Number(exp) < now) return false;
+  if (Number(ep) !== epoch) return false; // signed out by a password reset
+  return timingSafeEqual(sig, await hmac(secret, `reinman:${exp}:${ep}`));
+}
+
+/** Keyed password hash: HMAC(SESSION_SECRET, salt:password). A stolen database alone
+ *  can't be brute-forced without the secret, and it stays within the free plan's CPU budget. */
+export async function hashPassword(secret: string, salt: string, password: string): Promise<string> {
+  return hmac(secret, `pw:${salt}:${password}`);
+}
+
+export function randomToken(bytes = 32): string {
+  return b64url(crypto.getRandomValues(new Uint8Array(bytes)));
+}
+
+export async function sha256(s: string): Promise<string> {
+  return b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(s))));
+}
+
+export function sameEmail(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return false;
+  return timingSafeEqual(a.trim().toLowerCase(), b.trim().toLowerCase());
 }
 
 export async function checkPassword(expected: string | undefined, given: string): Promise<boolean> {

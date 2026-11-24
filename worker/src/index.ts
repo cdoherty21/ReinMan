@@ -1,11 +1,18 @@
 // Rein Man Worker: private API + static app + scheduled locking.
-import { COOKIE, checkPassword, makeSession, readCookie, sessionCookie, verifySession } from "./auth";
+import { COOKIE, checkPassword, hashPassword, makeSession, randomToken, readCookie, sameEmail, sessionCookie, sha256, verifySession } from "./auth";
 
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  /** The login email; password-reset emails go here. (REINMAN_USERNAME is accepted as a fallback.) */
+  REINMAN_EMAIL?: string;
   REINMAN_USERNAME?: string;
+  /** First password, used until a reset stores a new one in D1. */
   REINMAN_PASSWORD?: string;
+  /** Resend (resend.com) API key for password-reset emails. */
+  RESEND_API_KEY?: string;
+  /** Sender address; defaults to Resend's test sender, which can only mail the account owner. */
+  MAIL_FROM?: string;
   /** "true" turns the password login off: anyone with the link can use the app. */
   AUTH_DISABLED?: string;
   SESSION_SECRET?: string;
@@ -400,39 +407,124 @@ const routes: [string, RegExp, Handler][] = [
   ],
 ];
 
+type AuthState = { hash: string | null; salt: string | null; epoch: number };
+
+async function authState(db: D1Database): Promise<AuthState> {
+  const rows = await all<{ key: string; value: string }>(db, "SELECT key, value FROM auth_state");
+  const m = new Map(rows.map((r) => [r.key, r.value]));
+  return { hash: m.get("password_hash") ?? null, salt: m.get("password_salt") ?? null, epoch: Number(m.get("session_epoch") ?? 0) };
+}
+
+const loginEmail = (env: Env) => env.REINMAN_EMAIL || env.REINMAN_USERNAME;
+const RESET_MINUTES = 30;
+const MIN_PASSWORD = 10;
+
+async function tooMany(db: D1Database, table: "login_failures" | "auth_events", ip: string, limit: number, window: string, kind?: string) {
+  const sql = table === "login_failures"
+    ? `SELECT COUNT(*) AS n FROM login_failures WHERE ip = ? AND at > strftime('%Y-%m-%dT%H:%M:%fZ','now','${window}')`
+    : `SELECT COUNT(*) AS n FROM auth_events WHERE kind = ? AND ip = ? AND at > strftime('%Y-%m-%dT%H:%M:%fZ','now','${window}')`;
+  const r = table === "login_failures" ? await first<{ n: number }>(db, sql, ip) : await first<{ n: number }>(db, sql, kind, ip);
+  return (r?.n ?? 0) >= limit;
+}
+
+async function sendResetEmail(env: Env, to: string, link: string): Promise<boolean> {
+  if (!env.RESEND_API_KEY) return false;
+  const r = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: env.MAIL_FROM || "Rein Man <onboarding@resend.dev>",
+      to: [to],
+      subject: "Reset your Rein Man password",
+      text: `Someone (hopefully you) asked to reset the Rein Man password.\n\nSet a new password here (the link works once, for ${RESET_MINUTES} minutes):\n${link}\n\nIf this wasn't you, ignore this email; your password hasn't changed.`,
+      html: `<p>Someone (hopefully you) asked to reset the Rein Man password.</p><p><a href="${link}">Set a new password</a>. The link works once, for ${RESET_MINUTES} minutes.</p><p>If this wasn't you, ignore this email; your password hasn't changed.</p>`,
+    }),
+  });
+  if (!r.ok) console.error("Resend error", r.status, await r.text());
+  return r.ok;
+}
+
 async function handleAuth(req: Request, env: Env, url: URL): Promise<Response | null> {
+  const ip = req.headers.get("CF-Connecting-IP") || "unknown";
   if (url.pathname === "/api/login" && req.method === "POST") {
-    const ip = req.headers.get("CF-Connecting-IP") || "unknown";
-    const recent = await first<{ n: number }>(
-      env.DB,
-      "SELECT COUNT(*) AS n FROM login_failures WHERE ip = ? AND at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-15 minutes')",
-      ip,
-    );
-    if ((recent?.n ?? 0) >= 8) return json({ error: "Too many attempts. Try again later." }, 429);
-    const body = (await req.json().catch(() => ({}))) as { username?: string; password?: string };
-    const configured = Boolean(env.REINMAN_USERNAME && env.REINMAN_PASSWORD && env.SESSION_SECRET);
-    // check both fields every time so a wrong username takes as long as a wrong password
-    const userOk = await checkPassword(env.REINMAN_USERNAME?.trim().toLowerCase(), (body.username ?? "").trim().toLowerCase());
-    const passOk = await checkPassword(env.REINMAN_PASSWORD, body.password ?? "");
-    if (!configured || !userOk || !passOk) {
+    if (await tooMany(env.DB, "login_failures", ip, 8, "-15 minutes")) return json({ error: "Too many attempts. Try again later." }, 429);
+    const body = (await req.json().catch(() => ({}))) as { email?: string; username?: string; password?: string };
+    const st = await authState(env.DB);
+    const email = loginEmail(env);
+    const configured = Boolean(email && env.SESSION_SECRET && (st.hash || env.REINMAN_PASSWORD));
+    // evaluate both checks every time so a wrong email takes as long as a wrong password
+    const emailOk = sameEmail(email, body.email ?? body.username ?? "");
+    const given = body.password ?? "";
+    const passOk = st.hash && st.salt && env.SESSION_SECRET
+      ? await checkPassword(st.hash, await hashPassword(env.SESSION_SECRET, st.salt, given))
+      : await checkPassword(env.REINMAN_PASSWORD, given);
+    if (!configured || !emailOk || !passOk) {
       await env.DB.prepare("INSERT INTO login_failures (ip) VALUES (?)").bind(ip).run();
-      return json({ error: configured ? "Wrong username or password." : "Login is not set up on the server yet." }, 401);
+      return json({ error: configured ? "Wrong email or password." : "Login is not set up on the server yet." }, 401);
     }
-    const token = await makeSession(env.SESSION_SECRET!);
+    const token = await makeSession(env.SESSION_SECRET!, st.epoch);
     return json({ ok: true }, 200, { "Set-Cookie": sessionCookie(token, 30 * 86400) });
   }
   if (url.pathname === "/api/logout" && req.method === "POST") {
     return json({ ok: true }, 200, { "Set-Cookie": sessionCookie("", 0) });
+  }
+  if (url.pathname === "/api/forgot" && req.method === "POST") {
+    // Same answer whatever the email, so the form can't be used to discover the address.
+    const generic = json({ ok: true, message: "If that email is the Rein Man login, a reset link is on its way." });
+    if (await tooMany(env.DB, "auth_events", ip, 3, "-1 hour", "forgot")) return json({ error: "Too many requests. Try again in an hour." }, 429);
+    await env.DB.prepare("INSERT INTO auth_events (kind, ip) VALUES ('forgot', ?)").bind(ip).run();
+    const body = (await req.json().catch(() => ({}))) as { email?: string };
+    const email = loginEmail(env);
+    if (!email || !env.SESSION_SECRET || !sameEmail(email, body.email ?? "")) return generic;
+    if (!env.RESEND_API_KEY) return json({ error: "Password-reset email isn't set up on the server yet (RESEND_API_KEY)." }, 503);
+    const token = randomToken();
+    const expires = new Date(Date.now() + RESET_MINUTES * 60_000).toISOString();
+    await env.DB.prepare("INSERT INTO password_resets (token_hash, expires_at) VALUES (?, ?)").bind(await sha256(token), expires).run();
+    const sent = await sendResetEmail(env, email.trim(), `${url.origin}/reset?token=${encodeURIComponent(token)}`);
+    if (!sent) return json({ error: "The reset email couldn't be sent. Check the Resend setup." }, 502);
+    return generic;
+  }
+  if (url.pathname === "/api/reset" && req.method === "POST") {
+    if (await tooMany(env.DB, "login_failures", ip, 8, "-15 minutes")) return json({ error: "Too many attempts. Try again later." }, 429);
+    const body = (await req.json().catch(() => ({}))) as { token?: string; password?: string };
+    const password = body.password ?? "";
+    if (password.length < MIN_PASSWORD) return json({ error: `Use at least ${MIN_PASSWORD} characters.` }, 400);
+    if (!env.SESSION_SECRET) return json({ error: "Login is not set up on the server yet." }, 503);
+    const th = await sha256(body.token ?? "");
+    // single use: claim the token atomically
+    const claimed = await env.DB.prepare(
+      `UPDATE password_resets SET used_at = ${NOW_SQL} WHERE token_hash = ? AND used_at IS NULL AND expires_at > ? RETURNING token_hash`,
+    ).bind(th, new Date().toISOString()).first();
+    if (!claimed) {
+      await env.DB.prepare("INSERT INTO login_failures (ip) VALUES (?)").bind(ip).run();
+      return json({ error: "This reset link is invalid, used or expired. Request a new one." }, 400);
+    }
+    const st = await authState(env.DB);
+    const salt = randomToken(16);
+    const hash = await hashPassword(env.SESSION_SECRET, salt, password);
+    const epoch = st.epoch + 1;
+    const up = "INSERT INTO auth_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value";
+    await env.DB.batch([
+      env.DB.prepare(up).bind("password_salt", salt),
+      env.DB.prepare(up).bind("password_hash", hash),
+      env.DB.prepare(up).bind("session_epoch", String(epoch)),
+      env.DB.prepare("UPDATE password_resets SET used_at = COALESCE(used_at, " + NOW_SQL + ")"),
+    ]);
+    // signed out everywhere else; signed in here with the new epoch
+    const token = await makeSession(env.SESSION_SECRET, epoch);
+    return json({ ok: true }, 200, { "Set-Cookie": sessionCookie(token, 30 * 86400) });
   }
   return null;
 }
 
 async function isAuthed(req: Request, env: Env): Promise<boolean> {
   if (env.AUTH_DISABLED === "true") return true;
-  return verifySession(env.SESSION_SECRET ?? "", readCookie(req, COOKIE));
+  const token = readCookie(req, COOKIE);
+  if (!token || !env.SESSION_SECRET) return false;
+  return verifySession(env.SESSION_SECRET, token, (await authState(env.DB)).epoch);
 }
 
-const PUBLIC_ASSETS = /^\/(login|assets\/|logo\.svg$|favicon\.svg$|manifest\.webmanifest$)/;
+const PUBLIC_ASSETS = /^\/(login|reset|assets\/|logo\.svg$|favicon\.svg$|manifest\.webmanifest$)/;
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
