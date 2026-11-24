@@ -29,7 +29,32 @@ jobs:
         with: { python-version: "3.12", cache: pip, cache-dependency-path: engine/pyproject.toml }
       - run: (command -v pdftotext && command -v tesseract) || (sudo apt-get update && sudo apt-get install -y poppler-utils tesseract-ocr)
       - run: pip install -e .
-      - if: inputs.rescan == true
-        run: reinman documents --rescan
-      - if: inputs.rescan != true
-        run: reinman documents
+      - name: Import verified November 24 cards and reprocess the six partial extracts
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from reinman.db import connect
+          from reinman.documents import _store_program_cards, process_queue
+          from reinman.registry import ensure_baseline
+          from reinman.predict import predict_date
+          db = connect()
+          ensure_baseline(db)
+          cards = json.loads(Path('verified_2026_11_24_cards.json').read_text())
+          assert len(cards) == 51 and all(c['meet']['race_date'] == '2026-11-24' for c in cards)
+          imported, linked = _store_program_cards(db, cards)
+          print('Complete cards imported:', len(imported), 'verified cards linked:', len(linked))
+          names = ('finger-lakes.txt','parx-racing.txt','delta-downs.txt','mountaineer.txt','mahoning-valley.txt','zia-park.txt')
+          for doc in db.query("SELECT id FROM documents WHERE lower(filename) IN (?,?,?,?,?,?) AND status='processed'", names):
+              db.execute("DELETE FROM document_notes WHERE document_id=?", [doc['id']])
+              db.execute("UPDATE documents SET status='pending', error=NULL WHERE id=?", [doc['id']])
+          print('Rescan:', process_queue(db))
+          scoped = {rid: ['verified race program'] for rid in linked}
+          print('Upcoming picks:', predict_date(db, '2026-11-24', scoped, only_changed=True))
+          for row in db.query("""SELECT filename, status, json_array_length(summary,'$.races_linked') AS linked_races,
+                json_extract(summary,'$.horses_matched') AS matched_horses,
+                json_extract(summary,'$.partial_conflicts') AS conflicting_races
+                FROM documents WHERE lower(filename) IN (?,?,?,?,?,?) ORDER BY filename""", names):
+              print(row)
+          PY
