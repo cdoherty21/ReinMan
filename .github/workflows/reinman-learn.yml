@@ -12,6 +12,9 @@ permissions:
   contents: read
 jobs:
   learn:
+    # Scheduled runs stay off until the repository variable REINMAN_ENABLED is "true"
+    # (set it once the racing-data secrets exist). Manual runs always work.
+    if: github.event_name == 'workflow_dispatch' || vars.REINMAN_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     defaults: { run: { working-directory: engine } }

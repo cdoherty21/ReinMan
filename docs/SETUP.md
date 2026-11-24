@@ -38,7 +38,7 @@ RACINGAPI_USERNAME=… RACINGAPI_PASSWORD=… reinman source-check --date <a rac
 Optional repository variable `NWS_USER_AGENT`, e.g. `(rein-man, you@example.com)` — NWS
 asks automated clients to identify themselves.
 
-Workflows must be on the **default branch** for schedules and dispatch to run.
+Workflows must be on the **default branch** for schedules and dispatch to run. Scheduled data jobs stay off until you add the repository **variable** `REINMAN_ENABLED` = `true` (Settings → Secrets and variables → Actions → Variables) — do that once the racing-data secrets are in place.
 
 ## 4. Reliable race-day clock (Worker → GitHub)
 Create a fine-grained GitHub token with **Actions: Read and write** on this repository only:
