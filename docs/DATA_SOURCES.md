@@ -27,9 +27,30 @@ bypasses paywalls, and never fabricates missing data.
   Private personal use fits its free tier, which has a 1,500-credit monthly cap.
   The board and each results page cost two credits. Coverage follows TVG and
   the feed does not supply speed figures, past performances or workouts.
-* [OffTrackBetting.com](https://www.offtrackbetting.com/results/) is available
-  through `reinman import-otb` for saved single-race HTML with an official
-  result table. See [setup](SETUP.md#import-offtrackbettingcom-results-and-payouts).
+* [OffTrackBetting.com](https://www.offtrackbetting.com/results/) results pages are
+  read automatically through Firecrawl's scrape API when `FIRECRAWL_API_KEY` is set
+  (`engine/reinman/sources/otb_live.py`): finish order (top four), win/place/show,
+  exotic and multi-race payoffs, and scratches for every race at a track on one page.
+  Results only, no cards or odds. Saved single-race pages can still be loaded with
+  `reinman import-otb`. See [setup](SETUP.md#automatic-offtrackbettingcom-results).
+
+  **Terms, checked 2026-11-24.** OTB's [robots.txt](https://www.offtrackbetting.com/robots.txt)
+  allows general crawlers everywhere except `/core`, `/member` and one legacy path.
+  Its [Terms & Conditions](https://www.offtrackbetting.com/terms.html) contain no clause
+  about robots, scraping or automated access; section 5 licenses the service "for
+  personal, non-commercial use only", which is how Rein Man uses it. One clause bars
+  creating "code, software or other program that incorporates any elements of the
+  Service"; it reads as aimed at copying OTB's app, but OTB could read it more broadly,
+  so this source is kept small and stops at the first refusal:
+  * a track's page is read only while Rein Man has a race there that has run without an
+    official result, at most once per `OTB_MIN_INTERVAL_MIN` (default 60) minutes;
+  * at most `OTB_DAILY_PAGES` (default 60) page reads a day across all jobs;
+  * Firecrawl's **basic** proxy only — a 403 or 429 stops OTB reads for the day instead
+    of retrying through other proxies;
+  * Rein Man stays private and non-commercial. If that changes, stop using this source.
+
+  OTB's [RSS results feed](https://www.offtrackbetting.com/rss.html) is not used: it
+  carries headlines for major stakes only, and its terms limit it to display with links.
 * [Equibase's 2023 dataset](https://www.jockeyclub.com/default.asp?area=10&section=Resources&story=1452)
   was announced as complimentary for research and development. Its contents
   require conversion to canonical JSON before import.
@@ -46,6 +67,7 @@ bypasses paywalls, and never fabricates missing data.
   validation, predictions come from the clearly labeled `v0-market-baseline` model.
 
 ## Sources consulted
+- OffTrackBetting.com Terms & Conditions — https://www.offtrackbetting.com/terms.html ; robots.txt — https://www.offtrackbetting.com/robots.txt ; RSS terms — https://www.offtrackbetting.com/rss.html
 - Equibase Terms of Use — https://www.equibase.com/about/terms.cfm
 - DRF on Equibase outages and scraping — https://www.drf.com/news/equibase-website-back-almost-100-percent-following-attacks
 - The Racing API docs/OpenAPI — https://api.theracingapi.com/documentation ; North America spec mirror — https://apis.io/apis/the-racing-api/the-racing-api-north-america-api/

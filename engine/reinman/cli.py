@@ -138,7 +138,7 @@ def automatic_sources(db: Database):
             [job_name, now, now, job_name, now[:10], cap],
         ) is not None
 
-    return configured_sources(reserve)
+    return configured_sources(reserve, db)
 
 
 def source_check(race_date: str) -> dict:
@@ -176,8 +176,10 @@ def monitor(db: Database) -> dict:
         out = {"ingest": {"changed_races": {}, "skipped": "board recently polled"}}
     else:
         out = {"ingest": job(db, "ingest", do_ingest, db, d, sources)}
-    out["results"] = ({"official": 0, "deferred_to": "daily"} if free else
-                      job(db, "results", do_results, db, d, sources))
+    # PuntersEdge results wait for the daily job (4 reads a day); OTB fills in during the day.
+    live = [src for src in sources if src.name != "puntersedge"] if free else sources
+    out["results"] = (job(db, "results", do_results, db, d, live) if live else
+                      {"official": 0, "deferred_to": "daily"})
     out["grade_pre"] = job(db, "lock", predict.lock_due, db)
     out["documents"] = job(db, "documents", documents.process_pending, db)
     out["predict"] = job(db, "predict", predict.predict_date, db, d, out["ingest"]["changed_races"])

@@ -65,6 +65,8 @@ the historical database for training and backtesting.
 | `D1_DATABASE_ID` | from `wrangler d1 create` |
 | `CLOUDFLARE_D1_TOKEN` | API token with **Account → D1 → Edit** only |
 | `CLOUDFLARE_DEPLOY_TOKEN` | token with Workers Scripts Edit + D1 Edit (for `reinman-deploy`) |
+| `PUNTERSEDGE_API_KEY` | free racing feed (see [Free U.S. racing data](#free-us-racing-data)) |
+| `FIRECRAWL_API_KEY` | optional: automatic OTB results (see [below](#automatic-offtrackbettingcom-results)) |
 
 Optional repository variable `NWS_USER_AGENT`, e.g. `(rein-man, you@example.com)` — NWS
 asks automated clients to identify themselves.
@@ -132,6 +134,27 @@ calls. The monitor spaces board requests at least 45 minutes apart within a UTC 
 and the daily job settles today's and yesterday's results. Manual commands and backfills
 also use the key's allowance. The provider stops serving requests at the free plan's cap.
 
+### Automatic OffTrackBetting.com results
+
+Create a [Firecrawl API key](https://www.firecrawl.dev/app/api-keys) and add it as the
+GitHub Actions secret `FIRECRAWL_API_KEY`. The race-day monitor and the daily job then
+read OTB's results page for each track that has a finished race without an official
+result, and grade Rein Man's picks from it. PuntersEdge results still come first in the
+daily job; OTB fills the gaps, and during the day it is the only results source.
+
+| Setting (repository variable or env) | Default | Meaning |
+|---|---|---|
+| `OTB_MIN_INTERVAL_MIN` | 60 | minutes between reads of the same track-day page |
+| `OTB_DAILY_PAGES` | 60 | page reads per UTC day across every job (1 Firecrawl credit each) |
+
+A U.S. racing day with 10–15 tracks uses roughly 40–60 credits, so about 1,500 a month.
+Firecrawl's free credits cover a trial; the Hobby plan covers daily use. A race is stored
+only if it has one clear winner and every finisher's number and name match the card;
+dead heats and mismatches are left for PuntersEdge. If OTB refuses a request (403/429),
+OTB reads stop for the rest of the UTC day; the Performance page's automation log shows
+an `otb_blocked` entry. OTB track ids are learned from its daily thoroughbred index and
+kept in the `otb_tracks` table. See [DATA_SOURCES](DATA_SOURCES.md) for the terms review.
+
 ### Import OffTrackBetting.com results and payouts
 
 Open an [OTB results page](https://www.offtrackbetting.com/results/) with a single race
@@ -148,5 +171,5 @@ reinman stats
 The importer records the posted finish order, straight payoffs and supported exotic
 payouts. It checks the horse names and program numbers against the card when one exists
 and skips races already marked official. Use `--evening` for an evening card with a
-separate race numbering sequence. OTB returned HTTP 403 to the development environment,
-so its import path uses saved single-race HTML. Scheduled settlement uses PuntersEdge.
+separate race numbering sequence. OTB returns HTTP 403 to some data-center networks,
+which is why the automatic source goes through Firecrawl rather than fetching directly.
