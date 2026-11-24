@@ -233,7 +233,8 @@ def inspect_documents(db: Database, doc_id: int | None, grep: str | None, max_ch
     (PDF originals through pdftotext -layout). Used to build readers for real layouts."""
     if doc_id is None:
         rows = db.query("SELECT id, uploaded_at, filename, size_bytes, chars, status, track_id, race_date, "
-                        "json_extract(summary,'$.races_linked') AS linked FROM documents ORDER BY id DESC LIMIT 60")
+                        "json_extract(summary,'$.races_linked') AS linked, json_extract(summary,'$.past_performances') AS past_performances "
+                        "FROM documents ORDER BY id DESC LIMIT 60")
         return {"documents": rows}
     doc = db.one("SELECT id, filename, status FROM documents WHERE id=?", [doc_id])
     if not doc:
