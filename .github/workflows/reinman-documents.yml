@@ -29,7 +29,54 @@ jobs:
         with: { python-version: "3.12", cache: pip, cache-dependency-path: engine/pyproject.toml }
       - run: (command -v pdftotext && command -v tesseract) || (sudo apt-get update && sudo apt-get install -y poppler-utils tesseract-ocr)
       - run: pip install -e .
+      - name: Restore the original Finger Lakes program to its legacy upload
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          python - <<'PY'
+          from hashlib import sha256
+          from urllib.request import urlopen
+          from reinman.db import connect
+          from reinman.documents import document_text
+          from reinman.programs import pdf_layout, program_cards
+
+          db = connect()
+          doc = db.one("""SELECT d.id FROM documents d
+              WHERE lower(d.filename) = 'fingerlakes1124.pdf'
+              AND NOT EXISTS (SELECT 1 FROM document_file_chunks f WHERE f.document_id=d.id)
+              ORDER BY id LIMIT 1""")
+          if doc:
+              legacy = document_text(db, doc["id"])
+              assert "Finger Lakes" in legacy
+              assert "November 24, 2026" in legacy or "11/24/2026" in legacy
+              url = "https://www.equibase.com/content/CustomPPs/FingerLakes/FingerLakes1124.pdf"
+              with urlopen(url, timeout=25) as response:
+                  pdf = response.read(8 * 1024 * 1024 + 1)
+              assert sha256(pdf).hexdigest() == "0524f44a680c2460b5790784e1a55d2e02ce99711dd00c85718491fdbac94255"
+              cards = program_cards(pdf_layout(pdf))
+              assert len(cards) == 8 and all(c["meet"]["race_date"] == "2026-11-24" for c in cards)
+              for i in range(0, len(pdf), 196608):
+                  db.execute("INSERT INTO document_file_chunks(document_id,seq,bytes) VALUES(?,?,unhex(?))",
+                             [doc["id"], i // 196608, pdf[i:i+196608].hex()])
+              db.execute("UPDATE documents SET status='pending',size_bytes=?,mime='application/pdf',error=NULL WHERE id=?",
+                         [len(pdf), doc["id"]])
+              print("Restored the verified original PDF to its existing upload.")
+          PY
       - if: inputs.rescan == true
         run: reinman documents --rescan
       - if: inputs.rescan != true
         run: reinman documents
+      - name: Verify live Finger Lakes race coverage
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          python - <<'PY'
+          from reinman.db import connect
+          db = connect()
+          print(db.one("""SELECT COUNT(*) AS race_cards, SUM(
+              (SELECT COUNT(*) FROM runners n WHERE n.race_id=r.race_id)) AS entries
+              FROM races r WHERE r.track_id='FL' AND r.race_date='2026-11-24'"""))
+          print(db.one("""SELECT status, json_array_length(summary, '$.races_linked') AS linked_races,
+              json_extract(summary, '$.horses_matched') AS matched_horses,
+              json_extract(summary, '$.workouts') AS workouts
+              FROM documents WHERE lower(filename)='fingerlakes1124.pdf'
+              AND status='processed' ORDER BY id DESC LIMIT 1"""))
+          PY
