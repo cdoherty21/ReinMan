@@ -36,11 +36,11 @@ recommended).
 
 ## Documents
 The **Documents** page uploads PDFs (with real text), HTML, TXT, CSV or Rein Man JSON. The
-browser extracts the text; the hourly monitor job (or `reinman documents`) scans it, links it
+browser extracts the text. The hourly **reinman-documents** workflow (or `reinman documents`) scans uploads independently of the live-data feed. Equibase Pocket PPs and the Finger Lakes full program can create cards from their entries. PDFs are read with Poppler (`pdftotext`) by the engine. Post times are used when printed. The scanner links documents
 to stored races by horse names, keeps each horse's passage for the race page, and extracts
 workouts (standard "date track distance condition time grade rank/field" lines, which feed
 the model's workout features) and payout lines. JSON in the canonical format is imported
-directly. Click the filename to view an upload. Earlier uploads show the extracted text
+directly. Uploads request a scan immediately through the Worker’s GitHub dispatch token. The hourly document workflow provides a fallback. Click the filename to view an upload. Earlier uploads show the extracted text
 because only the text was stored. Scanned images require a text layer before upload.
 
 ## 2. Racing data

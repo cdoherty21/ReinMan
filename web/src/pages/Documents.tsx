@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "../main";
 import { api, stamp, todayET, useApi } from "../lib";
 import { extractText } from "../extract";
@@ -7,7 +7,7 @@ import { Empty, ErrorBox, Loading } from "./common";
 type Summary = {
   races_linked?: string[]; horses_matched?: number; workouts?: number; workouts_applied_to_cards?: number;
   payouts?: number; scratch_mentions?: number; canonical_import?: boolean;
-  cards?: number; official?: number; waiting_for_race?: number;
+  cards?: number; official?: number; race_cards_imported?: string[]; waiting_for_race?: number;
 };
 type Doc = {
   id: number; uploaded_at: string; filename: string; chars: number; race_date: string | null; track_id: string | null;
@@ -23,6 +23,13 @@ export function Documents() {
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<string[]>([]);
   const [open, setOpen] = useState<number | null>(null);
+
+  const awaitingScan = data?.rows.some((doc) => doc.status === "pending") ?? false;
+  useEffect(() => {
+    if (!awaitingScan) return;
+    const timer = window.setInterval(reload, 5000);
+    return () => window.clearInterval(timer);
+  }, [awaitingScan, reload]);
 
   async function upload() {
     setBusy(true);
@@ -50,6 +57,14 @@ export function Documents() {
       }
       setLog([...out]);
     }
+    if (out.some((line) => line.startsWith("✓"))) {
+      try {
+        const { started } = await api<{ started: boolean }>("/api/documents/scan", { method: "POST", body: "{}" });
+        setLog([...out, started ? "Automatic scan requested." : "The scheduled scanner will pick up these files."]);
+      } catch {
+        setLog([...out, "The scheduled scanner will pick up these files."]);
+      }
+    }
     setFiles([]);
     setBusy(false);
     reload();
@@ -68,7 +83,7 @@ export function Documents() {
         <h2>Upload</h2>
         <p className="small muted">
           Upload text-based PDFs, HTML, TXT, CSV, or Rein Man JSON up to 8 MB. Rein Man extracts useful racing details
-          and shows linked evidence on race pages.
+          and builds race cards from supported programs. Linked evidence appears on race pages.
         </p>
         <div className="upload-form">
           <input type="file" multiple accept=".pdf,.html,.htm,.txt,.csv,.json,application/pdf,text/*"
@@ -109,14 +124,14 @@ function DocRow({ d, open, onToggle }: { d: Doc; open: boolean; onToggle: () => 
   const s = d.summary;
   const found = !s || s.waiting_for_race ? null : s.canonical_import
     ? `Imported ${s.cards} card(s), ${s.official} official result(s)`
-    : `${s.races_linked?.length ?? 0} race(s), ${s.horses_matched ?? 0} horses, ${s.workouts ?? 0} workouts, ${s.payouts ?? 0} payouts`;
+    : `${s.races_linked?.length ?? 0} race(s), ${s.race_cards_imported?.length ?? 0} imported, ${s.horses_matched ?? 0} horses, ${s.workouts ?? 0} workouts, ${s.payouts ?? 0} payouts`;
   return (
     <>
       <tr>
         <td className="small">{stamp(d.uploaded_at)}</td>
         <td><a href={`/api/documents/${d.id}/file`} target="_blank" rel="noopener">{d.filename}</a></td>
         <td>
-          {d.status === "pending" ? <span className="muted">Waiting for next scan</span> :
+          {d.status === "pending" ? <span className="muted">Awaiting automatic scan</span> :
             d.status === "waiting" ? <span className="muted">Waiting for the race card</span> :
             d.status === "error" ? <span className="neg" title={d.error ?? ""}>Error</span> : <span className="pos">Scanned</span>}
         </td>

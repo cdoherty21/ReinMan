@@ -93,17 +93,46 @@ async function dispatchMonitor(env: Env, when: Date): Promise<string> {
   const h = when.getUTCHours();
   const racing = h >= 14 || h < 6; // ~10am–2am ET covers U.S. day and night cards
   if (!racing || when.getUTCMinutes() % every !== 0) return "outside dispatch window";
-  const url = `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/${env.GITHUB_WORKFLOW}/dispatches`;
-  const r = await fetch(url, {
+  return dispatchWorkflow(env, env.GITHUB_WORKFLOW || "reinman-monitor.yml");
+}
+
+async function dispatchWorkflow(env: Env, workflow: string): Promise<string> {
+  if (!env.GITHUB_TOKEN || !env.GITHUB_REPO) return "dispatch not configured";
+  const url = `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/${workflow}/dispatches`;
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${env.GITHUB_TOKEN}`,
       Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
       "User-Agent": "rein-man-worker",
     },
     body: JSON.stringify({ ref: env.GITHUB_REF || "main" }),
   });
-  return `dispatch ${r.status}`;
+  return `dispatch ${response.status}`;
+}
+
+async function dispatchDocuments(env: Env): Promise<string> {
+  const pending = await first(env.DB, "SELECT id FROM documents WHERE status='pending' LIMIT 1");
+  if (!pending) return "no pending documents";
+  if (!env.GITHUB_TOKEN || !env.GITHUB_REPO) return "dispatch not configured";
+  const claim = await first(env.DB,
+    `INSERT INTO job_runs (job, status)
+     SELECT 'document_dispatch', 'running' WHERE NOT EXISTS (
+       SELECT 1 FROM job_runs WHERE job='document_dispatch'
+       AND started_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 minutes')
+     ) RETURNING id`);
+  if (!claim) return "recently dispatched";
+  let result = "dispatch failed";
+  try {
+    result = await dispatchWorkflow(env, "reinman-documents.yml");
+  } catch (error) {
+    console.error("Could not start document scanner", error);
+  } finally {
+    await env.DB.prepare(`UPDATE job_runs SET finished_at=${NOW_SQL}, status=?, details=? WHERE id=?`)
+      .bind(result === "dispatch 204" ? "ok" : "error", result, claim.id).run();
+  }
+  return result;
 }
 
 // ------------------------------------------------------------------ API
@@ -411,6 +440,14 @@ const routes: [string, RegExp, Handler][] = [
   ],
   [
     "POST",
+    /^\/api\/documents\/scan$/,
+    async (_req, env) => {
+      const result = await dispatchDocuments(env);
+      return json({ started: result === "dispatch 204" || result === "recently dispatched" });
+    },
+  ],
+  [
+    "POST",
     /^\/api\/documents$/,
     async (req, env) => {
       const b = (await req.json()) as {
@@ -621,6 +658,7 @@ export default {
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
     const locked = await lockDue(env.DB);
     const dispatch = await dispatchMonitor(env, new Date(controller.scheduledTime));
+    await dispatchDocuments(env);
     await env.DB.prepare("INSERT INTO job_runs (job, finished_at, status, details) VALUES ('worker_cron', strftime('%Y-%m-%dT%H:%M:%fZ','now'), 'ok', ?)")
       .bind(JSON.stringify({ locked, dispatch }))
       .run();

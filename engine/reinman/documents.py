@@ -26,6 +26,8 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from .db import Database
+from . import programs
+from .ingest import race_id_for, store_card
 from .sources.otb import _PAYOUT
 from .util import norm_name, now_iso, to_float
 from .wagertypes import normalize_wager_type
@@ -40,7 +42,7 @@ _WORK = re.compile(
     r"(?P<track>[A-Z][A-Za-z]{1,3})\s+"
     r"(?P<dist>\d(?:\s?1/2)?)\s?[fF]\s+"
     r"(?P<cond>[a-z]{1,3}|[A-Z]{1,3})\s+"
-    r"(?P<time>(?:1:)?:?\d{2}(?:\.\d{1,2})?|\d{2}\s?\d/\d)\s+"
+    r"(?P<time>(?:1:)?:?\d{2}(?:\.\d{1,2})?|\d{2}\s?\d/\d)\s*"
     r"(?P<grade>[A-Za-z]{1,3})\s+"
     r"(?P<rank>\d{1,3})/(?P<of>\d{1,3})")
 _ISO_DATE = re.compile(r"\b(20\d{2})-(\d{2})-(\d{2})\b")
@@ -172,6 +174,8 @@ def scan(db: Database, doc: dict, text: str) -> dict:
     lines = text.splitlines()
     norm_lines = [" " + norm_name(x) + " " for x in lines]
     races = candidate_races(db, doc, text)
+    if doc.get("program_race_ids"):
+        races = [race for race in races if race["race_id"] in doc["program_race_ids"]]
     by_race = defaultdict(list)
     if races:
         ids = [r["race_id"] for r in races]
@@ -257,6 +261,36 @@ def _try_canonical(db: Database, text: str) -> dict | None:
             "official": official}
 
 
+def _program_text(db: Database, doc: dict, text: str) -> str:
+    signature = db.scalar(
+        "SELECT hex(substr(bytes,1,5)) FROM document_file_chunks WHERE document_id=? AND seq=0",
+        [doc["id"]],
+    )
+    if signature != "255044462D":
+        return text
+    chunks = db.query("SELECT hex(bytes) AS encoded FROM document_file_chunks WHERE document_id=? ORDER BY seq",
+                      [doc["id"]])
+    return programs.pdf_layout(b"".join(bytes.fromhex(row["encoded"]) for row in chunks))
+
+
+def _store_program_cards(db: Database, cards: list[dict]) -> tuple[list[str], set[str]]:
+    imported, race_ids = [], set()
+    for card in cards:
+        meet, race = card["meet"], card["races"][0]
+        rid = race_id_for(meet["track_id"], meet["race_date"], race["race_number"])
+        race_ids.add(rid)
+        if db.scalar("SELECT EXISTS(SELECT 1 FROM runners WHERE race_id=?)", [rid]):
+            if race["post_time"]:
+                db.execute("UPDATE races SET post_time=? WHERE race_id=? AND post_time IS NULL",
+                           [race["post_time"], rid])
+            continue
+        store_card(db, card, "uploaded_program")
+        db.execute("UPDATE races SET status='official' WHERE race_id=? AND EXISTS "
+                   "(SELECT 1 FROM results WHERE race_id=?)", [rid, rid])
+        imported.append(rid)
+    return imported, race_ids
+
+
 def process_pending(db: Database, limit: int = 20) -> dict:
     docs = db.query(
         "SELECT d.* FROM documents d WHERE d.status='pending' OR (d.status='waiting' AND EXISTS ("
@@ -271,6 +305,12 @@ def process_pending(db: Database, limit: int = 20) -> dict:
             if doc["filename"].lower().endswith(".json"):
                 summary = _try_canonical(db, text)
             if summary is None:
+                text = _program_text(db, doc, text)
+                cards = programs.program_cards(text)
+                imported, race_ids = _store_program_cards(db, cards)
+                if cards:
+                    meet = cards[0]["meet"]
+                    doc = dict(doc, race_date=meet["race_date"], track_id=meet["track_id"], program_race_ids=race_ids)
                 card = pocket_card(text)
                 if card and not db.scalar(
                     "SELECT EXISTS(SELECT 1 FROM races r JOIN runners rn ON rn.race_id=r.race_id "
@@ -281,6 +321,7 @@ def process_pending(db: Database, limit: int = 20) -> dict:
                                [race_date, track, json.dumps({"waiting_for_race": race_number}), doc["id"]])
                     continue
                 summary = scan(db, doc, text)
+                summary["race_cards_imported"] = imported
             db.execute("UPDATE documents SET status='processed', processed_at=?, summary=? WHERE id=?",
                        [now_iso(), json.dumps(summary), doc["id"]])
             done += 1
@@ -290,3 +331,22 @@ def process_pending(db: Database, limit: int = 20) -> dict:
                        [now_iso(), str(e)[:500], doc["id"]])
             errors += 1
     return {"processed": done, "errors": errors}
+
+def process_queue(db: Database, rescan: bool = False) -> dict:
+    if rescan:
+        # Preserve already-imported canonical result files. Replaying one can
+        # replace a newer card with historical values.
+        predicate = """status IN ('processed', 'error', 'waiting')
+                       AND COALESCE(json_extract(summary, '$.canonical_import'), 0) = 0"""
+        db.execute(f"DELETE FROM document_notes WHERE document_id IN (SELECT id FROM documents WHERE {predicate})")
+        db.execute(f"UPDATE documents SET status='pending', processed_at=NULL, summary=NULL, error=NULL WHERE {predicate}")
+    total = {"processed": 0, "errors": 0}
+    while True:
+        batch = process_pending(db)
+        for key in total:
+            total[key] += batch[key]
+        pending = db.scalar("SELECT EXISTS(SELECT 1 FROM documents WHERE status='pending')")
+        if not pending and batch["processed"] + batch["errors"] == 0:
+            break
+    total["waiting_for_cards"] = db.scalar("SELECT COUNT(*) FROM documents WHERE status='waiting'")
+    return total
