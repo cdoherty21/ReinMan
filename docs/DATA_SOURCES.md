@@ -13,19 +13,30 @@ bypasses paywalls, and never fabricates missing data.
 | **Canonical JSON import** | Anything you're licensed to use, incl. rich past performances (speed/pace figures, call positions, trouble, workouts) | Whatever the file holds | Manual / scripted | Your license terms | Depends | — | **Implemented** (`sources/canonical.py`, `docs/DATA_FORMAT.md`) |
 | **Equibase** (equibase.com) | Entries, results, charts, PPs | Decades | Real time | Terms of Use prohibit robots, spiders, scrapers or any automated access; they've treated scraping as a breach and blocked it | Free to view; data products paid/licensed | Official industry database | **Not used** (ToS). Licensed data can be imported via the canonical format |
 | **TJC Thoroughbred Data Hub** (hub.jockeyclub.com, launched Nov 2026) | REST API (and MCP) for North American racing, pedigree and auction data, sourced from The Jockey Club registry and Equibase | Extensive | Real time | Licensed; 100 req/min default | Paid licensing (published price list; bigger datasets by quote) | Official | **Not implemented yet.** Strongest candidate for a second adapter once you choose a plan; the adapter interface is ready |
-| **Equibase research dataset (2023)** | Every past performance + result chart for 2023 Equibase-charted races | 2023 | One-off | Licensed | Paid | Official | Optional: import for model bootstrapping |
+| **Equibase research dataset (2023)** | Every past performance + result chart for 2023 Equibase-charted races | 2023 | One-off | Research terms apply | Announced as complimentary | Official | Optional: import for model bootstrapping |
 | **Brisnet** | PP data files, comprehensive chart files (6 comma-delimited files per card) | Long | Daily | Purchased per card/subscription; files for personal use | Paid per card / subscription | Long-standing | **Not implemented**: I could not verify the field layout of the PP single-file format, and Rein Man won't parse a format from guesses. Brisnet documents the chart file structure in its help center; once you have a file + spec, a converter to the canonical format is a small, testable job |
 | **DRF** | PPs, text charts back to 1993 (comma-delimited) | Since 1993 | Daily | Subscription | Paid | Long-standing | Not implemented (paid; same path as Brisnet) |
 | **Official track websites** | Entries/results/scratches per track | Varies | Varies | Each site's own terms; formats differ per track; most results come from Equibase anyway | Free to view | Inconsistent | Not used (no uniform, permitted feed) |
 | **Third-party Equibase scrapers** (Apify actors, parse.bot) | Entries/results | — | — | Unofficial; they scrape pages whose owner prohibits it | Some free tiers | Fragile | **Rejected** — they don't make the underlying access permitted |
 | **Horse Racing Nation** | Free entries/results website (Equibase partnership) | — | — | Website, not an API | Free | — | Not used |
 
+## Free sources
+
+* [PuntersEdge](https://puntersedge.online/us-racing-odds-api) supplies the TVG
+  board, snapshots of live win odds, scratches and final results with payouts.
+  Private personal use fits its free tier, which has a 1,500-credit monthly cap.
+  The board and each results page cost two credits. Coverage follows TVG and
+  the feed does not supply speed figures, past performances or workouts.
+* [OffTrackBetting.com](https://www.offtrackbetting.com/results/) is available
+  through `reinman import-otb` for saved single-race HTML with an official
+  result table. See [setup](SETUP.md#import-offtrackbettingcom-results-and-payouts).
+* [Equibase's 2023 dataset](https://www.jockeyclub.com/default.asp?area=10&section=Resources&story=1452)
+  was announced as complimentary for research and development. Its contents
+  require conversion to canonical JSON before import.
+
 ## What this means in practice
 
-* **There is no free, permitted, comprehensive source of U.S. thoroughbred entries,
-  past performances and results.** The cheapest permitted automated route found is
-  The Racing API's North America add-on (about £50/month). Cloudflare, GitHub Actions
-  and NWS remain $0, so that subscription is the only recurring cost.
+* **The free feed covers a subset of racing and data fields.** The Racing API's North America add-on remains available for existing installations.
 * **Past performances and figures are the gap.** The Racing API's North American
   entries don't include past-performance lines, speed/pace figures, running positions,
   beaten lengths, trouble comments or workouts. Rein Man builds horse, jockey, trainer,

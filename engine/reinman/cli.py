@@ -18,9 +18,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import sys
 import traceback
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from . import backtest, grading, ingest, performance, predict, train
@@ -28,7 +29,8 @@ from .db import Database, SQLiteDatabase, connect
 from .registry import ensure_baseline
 from .sources import configured_sources, get_source
 from .sources.canonical import CanonicalFile
-from .util import date_range, now_iso
+from .sources.otb import read_result
+from .util import date_range, norm_name, now_iso
 
 log = logging.getLogger("reinman")
 ET = ZoneInfo("America/New_York")
@@ -60,7 +62,7 @@ def job(db: Database, name: str, fn, *a, **k):
 def do_ingest(db: Database, race_date: str, sources=None) -> dict:
     changed: dict[str, list[str]] = {}
     meets = 0
-    for src in sources or configured_sources():
+    for src in configured_sources() if sources is None else sources:
         for meet in src.meets(race_date):
             card = src.card(meet)
             changed.update(ingest.store_card(db, card, src.name))
@@ -91,8 +93,8 @@ def weather_supplement(db: Database, race_date: str) -> int:
 
 def do_results(db: Database, race_date: str, sources=None) -> dict:
     done = []
-    for src in sources or configured_sources():
-        for meet in src.meets(race_date):
+    for src in configured_sources() if sources is None else sources:
+        for meet in getattr(src, "result_meets", src.meets)(race_date):
             done += ingest.store_results(db, meet, src.results(meet), src.name)
     return {"date": race_date, "official": len(done)}
 
@@ -105,6 +107,37 @@ def do_import(db: Database, path: str) -> dict:
     for r in f.all_results():
         official += len(ingest.store_results(db, r["meet"], r["races"], f.name))
     return {"cards": len(f.all_cards()), "changed": changed, "official": official}
+
+
+def do_import_otb(db: Database, path: str, track: str, race_date: str, race_number: int, evening: bool) -> dict:
+    result = read_result(path, race_number)
+    result["day_evening"] = "E" if evening else "D"
+    rid = ingest.race_id_for(track, race_date, race_number, result["day_evening"])
+    runners = db.query("SELECT horse_name, program_number FROM runners WHERE race_id=?", [rid])
+    by_name = {norm_name(r["horse_name"]): r["program_number"] for r in runners}
+    if runners and any(by_name.get(norm_name(f["horse_name"])) != f["program_number"] for f in result["finishers"]):
+        raise ValueError(f"OTB horse names or programs do not match the stored card for {rid}")
+    meet = {"track_id": track, "race_date": race_date}
+    existing = db.one("SELECT source FROM results WHERE race_id=?", [rid])
+    if existing:
+        return {"race_id": rid, "official": 0, "already_official_from": existing["source"]}
+    done = ingest.store_results(db, meet, [result], "otb")
+    return {"race_id": rid, "official": len(done), "payouts": len(result["payoffs"])}
+
+
+def automatic_sources(db: Database):
+    """Reserve two credits per attempt, across both scheduled jobs and reruns."""
+    def reserve(endpoint: str) -> bool:
+        now = now_iso()
+        cap = {"tote": 19, "results": 4}[endpoint]
+        job_name = f"puntersedge_{endpoint}_request"
+        return db.one(
+            "INSERT INTO job_runs (job, started_at, finished_at, status) SELECT ?, ?, ?, 'reserved' "
+            "WHERE (SELECT COUNT(*) FROM job_runs WHERE job=? AND started_at>=?) < ? RETURNING id",
+            [job_name, now, now, job_name, now[:10], cap],
+        ) is not None
+
+    return configured_sources(reserve)
 
 
 def source_check(race_date: str) -> dict:
@@ -134,8 +167,16 @@ def source_check(race_date: str) -> dict:
 
 def monitor(db: Database) -> dict:
     d = today()
-    out = {"ingest": job(db, "ingest", do_ingest, db, d)}
-    out["results"] = job(db, "results", do_results, db, d)
+    sources = automatic_sources(db)
+    free = any(src.name == "puntersedge" for src in sources)
+    last_board = db.scalar("SELECT MAX(started_at) FROM job_runs WHERE job='puntersedge_tote_request' "
+                           "AND started_at >= ?", [now_iso()[:10]]) if free else None
+    if free and last_board and datetime.fromisoformat(now_iso()) - datetime.fromisoformat(last_board) < timedelta(minutes=45):
+        out = {"ingest": {"changed_races": {}, "skipped": "board recently polled"}}
+    else:
+        out = {"ingest": job(db, "ingest", do_ingest, db, d, sources)}
+    out["results"] = ({"official": 0, "deferred_to": "daily"} if free else
+                      job(db, "results", do_results, db, d, sources))
     out["grade_pre"] = job(db, "lock", predict.lock_due, db)
     out["predict"] = job(db, "predict", predict.predict_date, db, d, out["ingest"]["changed_races"])
     out["grade"] = job(db, "grade", grading.grade_all, db)
@@ -147,10 +188,11 @@ def monitor(db: Database) -> dict:
 def daily(db: Database) -> dict:
     d = today()
     out = {}
+    sources = automatic_sources(db)
     for day in (_shift(d, -1), d):
-        out[f"results_{day}"] = job(db, "results", do_results, db, day)
+        out[f"results_{day}"] = job(db, "results", do_results, db, day, sources)
     for day in (d, _shift(d, 1)):
-        out[f"ingest_{day}"] = job(db, "ingest", do_ingest, db, day)
+        out[f"ingest_{day}"] = job(db, "ingest", do_ingest, db, day, sources)
         out[f"predict_{day}"] = job(db, "predict", predict.predict_date, db, day)
     out["lock"] = job(db, "lock", predict.lock_due, db)
     out["grade"] = job(db, "grade", grading.grade_all, db)
@@ -160,9 +202,10 @@ def daily(db: Database) -> dict:
 
 def backfill(db: Database, start: str, end: str) -> dict:
     n = 0
+    sources = configured_sources()
     for d in date_range(start, end):
-        job(db, "backfill_cards", do_ingest, db, d)
-        job(db, "backfill_results", do_results, db, d)
+        job(db, "backfill_cards", do_ingest, db, d, sources)
+        job(db, "backfill_results", do_results, db, d, sources)
         n += 1
     return {"days": n}
 
@@ -182,9 +225,17 @@ def main(argv=None) -> int:
     s.add_argument("--end", required=True)
     s = sub.add_parser("import")
     s.add_argument("path")
+    s = sub.add_parser("import-otb", help="import a saved OTB single-race results page")
+    s.add_argument("path")
+    s.add_argument("--track", required=True, type=str.upper, help="Rein Man track code, such as AQU")
+    s.add_argument("--date", required=True, type=lambda value: date.fromisoformat(value).isoformat())
+    s.add_argument("--race", required=True, type=int)
+    s.add_argument("--evening", action="store_true")
     s = sub.add_parser("source")
     s.add_argument("name")
     a = ap.parse_args(argv)
+    if a.cmd == "import-otb" and (a.race < 1 or not re.fullmatch(r"[A-Z0-9_]+", a.track)):
+        ap.error("import-otb requires a valid track code and positive race number")
     if a.cmd == "source-check":
         print(json.dumps(source_check(a.date or today()), indent=2, default=str))
         return 0
@@ -209,6 +260,7 @@ def main(argv=None) -> int:
         "backtest": lambda: job(db, "backtest", backtest.run, db),
         "backfill": lambda: backfill(db, a.start, a.end),
         "import": lambda: job(db, "import", do_import, db, a.path),
+        "import-otb": lambda: job(db, "import_otb", do_import_otb, db, a.path, a.track, d, a.race, a.evening),
         "source": lambda: get_source(a.name).capabilities,
     }[a.cmd]
     print(json.dumps(fn(), indent=2, default=str))

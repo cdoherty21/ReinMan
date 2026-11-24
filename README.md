@@ -10,8 +10,8 @@ after it beats the old one on races it has never seen.
 
 | Phase | State |
 |---|---|
-| 1 Data research & infrastructure | Done — see [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md). No free, permitted, comprehensive U.S. source exists; primary source is The Racing API NA add-on (paid). |
-| 2 Historical database | Done — D1/SQLite schema with integrity triggers; `reinman backfill` / `reinman import`. Needs the data subscription to fill. |
+| 1 Data research & infrastructure | Done — see [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md). PuntersEdge supports free private U.S. cards and settlement within its credit cap. OTB results and payouts can be imported from saved pages. |
+| 2 Historical database | Done — D1/SQLite schema with integrity triggers; `reinman backfill` / `reinman import`. Supports free and paid data sources. |
 | 3 Prediction engine | Done — exploded conditional logit + LightGBM + market blend, discounted-Harville finish model, Monte Carlo. |
 | 4 Backtesting | Done — chronological walk-forward with leakage tests; results stored and displayed. |
 | 5 Daily race analysis | Done — top 3, most likely, value, dark horse, confidence, play/pass, Rein Man's Take; re-predicts on scratches, jockey changes, odds moves, condition/surface changes. |
@@ -29,6 +29,8 @@ switch on automatically when a licensed source supplies them via the canonical i
 Lifetime history before Rein Man started collecting is limited to what backfill returns.
 Exotic and multi-race EV are estimates (no live probables/will-pays) and are only
 produced when live tote odds exist.
+
+See [free-feed and OTB setup](docs/SETUP.md#free-us-racing-data) for credentials and settlement frequency.
 
 ## Daily automation
 | When | What | Where |

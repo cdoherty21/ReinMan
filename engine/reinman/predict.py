@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import defaultdict
+from datetime import timedelta
 
 import numpy as np
 
@@ -14,16 +15,16 @@ from .models import Ensemble
 from .probability import DEFAULT_LAMBDAS, summarize
 from .registry import champion
 from .selections import fair_odds, runner_factors, select
-from .util import now_iso, stable_hash
+from .util import now_iso, parse_iso, stable_hash, to_iso
 from .wagers import multi_race_ticket, race_wagers
 from .wagertypes import LEGS
 
 log = logging.getLogger("reinman.predict")
 
 
-def _latest_pools(db: Database, race_id: str, progs: list[str]) -> dict | None:
+def _latest_pools(db: Database, race_id: str, progs: list[str], since: str = "") -> dict | None:
     rows = db.query("SELECT program_number, win_pool, place_pool, show_pool, captured_at FROM odds_snapshots "
-                    "WHERE race_id=? ORDER BY captured_at DESC", [race_id])
+                    "WHERE race_id=? AND captured_at>=? ORDER BY captured_at DESC", [race_id, since])
     latest = {}
     for r in rows:
         latest.setdefault(r["program_number"], r)
@@ -43,6 +44,10 @@ def analyze_race(db: Database, h, model_version: str, model, artifact: dict, rac
     live = [r for r in runners if not r["scratched"]]
     if len(live) < 2:
         return None
+    since = ""
+    if race.get("source") == "puntersedge":
+        since = to_iso(parse_iso(now_iso()) - timedelta(minutes=5))
+        live = [r if (r.get("updated_at") or "") >= since else dict(r, live_odds=None) for r in live]
     X, evidence = featurize_race(h, race, runners)
     progs = [r["program_number"] for r in live]
     names = [r["horse_name"] for r in live]
@@ -66,7 +71,7 @@ def analyze_race(db: Database, h, model_version: str, model, artifact: dict, rac
             offered = {x["wager_type"] for x in json.loads(race["pools"])} | {"WIN", "PLACE", "SHOW"}
         except (ValueError, TypeError, KeyError):
             offered = None
-    pools = _latest_pools(db, race["race_id"], progs)
+    pools = _latest_pools(db, race["race_id"], progs, since)
     wagers = race_wagers(p, progs, odds, odds_src, pools, race["track_id"], race["race_id"], offered,
                          POLICY, lambdas)
     sel = select(race["race_id"], progs, names, p, comps, odds, odds_src, factors, wagers, completeness,
@@ -95,7 +100,8 @@ def analyze_race(db: Database, h, model_version: str, model, artifact: dict, rac
     pace = projected_pace(X)
     inputs_hash = stable_hash({"m": model_version, "X": np.round(np.nan_to_num(X, nan=-999), 6).tolist(),
                                "odds": np.round(np.nan_to_num(odds, nan=-1), 3).tolist(), "progs": progs,
-                               "cond": race.get("track_condition"), "surface": race.get("surface")})
+                               "cond": race.get("track_condition"), "surface": race.get("surface"),
+                               **({"odds_sources": odds_src} if since else {})})
     return {"race": race, "selection": sel, "runners": runner_rows, "wagers": wagers, "p": p, "q": q,
             "progs": progs, "pace": pace, "inputs_hash": inputs_hash,
             "data_notes": {"unavailable": unavailable, "odds_basis": "live" if market is live_odds else
