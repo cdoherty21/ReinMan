@@ -29,7 +29,19 @@ jobs:
         with: { python-version: "3.12", cache: pip, cache-dependency-path: engine/pyproject.toml }
       - run: (command -v pdftotext && command -v tesseract) || (sudo apt-get update && sudo apt-get install -y poppler-utils tesseract-ocr)
       - run: pip install -e .
-      - if: inputs.rescan == true
-        run: reinman documents --rescan
-      - if: inputs.rescan != true
-        run: reinman documents
+      - name: Inspect six unmatched racing files
+        run: |
+          python - <<'PY'
+          from reinman.db import connect
+          from reinman.documents import document_text
+          from urllib.parse import urlsplit
+          import re
+          db = connect()
+          filenames = ('finger-lakes.txt','parx-racing.txt','delta-downs.txt','mountaineer.txt','mahoning-valley.txt','zia-park.txt')
+          docs = db.query("SELECT id,filename,summary FROM documents WHERE lower(filename) IN (?,?,?,?,?,?) ORDER BY id", filenames)
+          for doc in docs:
+              text = document_text(db, doc['id'])
+              urls = [urlsplit(value) for value in re.findall(r'https?://[^\s<>]+', text)]
+              print(doc['filename'], 'chars', len(text), 'lines', len(text.splitlines()), 'dates', re.findall(r'20\d\d-\d\d-\d\d|\d{1,2}/\d{1,2}/20\d{2}',text)[:8], 'url count', len(urls), 'source paths', sorted({(u.hostname,u.path) for u in urls})[:6])
+              print('First lines:', [line[:100] for line in text.splitlines() if line.strip() and '://' not in line][:5])
+          PY
