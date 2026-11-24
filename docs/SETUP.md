@@ -13,11 +13,13 @@ npx wrangler secret put REINMAN_PASSWORD -c worker/wrangler.jsonc   # your login
 npx wrangler secret put SESSION_SECRET  -c worker/wrangler.jsonc   # random 32+ chars: openssl rand -hex 32
 npm run deploy                              # → https://rein-man.<your-subdomain>.workers.dev
 ```
-**Recommended extra layer:** put the workers.dev hostname behind **Cloudflare Access**
-(Zero Trust → Access → Applications → self-hosted, allow only your email; free for up to
-50 users). Rein Man's own password + signed, HttpOnly, SameSite=Strict cookie stays on as
-a second factor; login attempts are throttled (8 per 15 min per IP). Missing secrets = no
-one can log in (fails closed).
+**Login is currently off** (`AUTH_DISABLED: "true"` in `worker/wrangler.jsonc`): anyone with the
+link can use the app, including adding entries to the real-wager log. To require a password
+again, set `AUTH_DISABLED` to `"false"`, add the `REINMAN_PASSWORD` and `SESSION_SECRET`
+secrets, and redeploy. With login on, Rein Man uses a signed, HttpOnly, SameSite=Strict
+cookie, throttles login attempts (8 per 15 min per IP) and fails closed if either secret is
+missing. Cloudflare Access (Zero Trust, free) is an alternative that needs no password:
+it emails you a one-time code.
 
 ## 2. Racing data — The Racing API North America add-on (~£49.99/mo)
 Subscribe at theracingapi.com, then verify the adapter against live data:

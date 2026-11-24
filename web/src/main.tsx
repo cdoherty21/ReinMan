@@ -72,7 +72,7 @@ function Login({ onDone }: { onDone: () => void }) {
   );
 }
 
-function Shell() {
+function Shell({ authRequired }: { authRequired: boolean }) {
   const loc = useLocation();
   const path = loc.split("?")[0];
   const [open, setOpen] = useState(false);
@@ -104,7 +104,7 @@ function Shell() {
               {label}
             </Link>
           ))}
-          <button
+          {authRequired && <button
             className="logout"
             onClick={async () => {
               await api("/api/logout", { method: "POST", body: "{}" }).catch(() => {});
@@ -112,7 +112,7 @@ function Shell() {
             }}
           >
             Sign out
-          </button>
+          </button>}
         </nav>
       </header>
       <main className="page">{page}</main>
@@ -126,14 +126,20 @@ function Shell() {
 
 function App() {
   const [auth, setAuth] = useState<boolean | null>(null);
+  const [authRequired, setAuthRequired] = useState(true);
   useEffect(() => {
-    api<{ authenticated: boolean }>("/api/session").then((r) => setAuth(r.authenticated)).catch(() => setAuth(false));
+    api<{ authenticated: boolean; authRequired?: boolean }>("/api/session")
+      .then((r) => {
+        setAuthRequired(r.authRequired !== false);
+        setAuth(r.authenticated);
+      })
+      .catch(() => setAuth(false));
     const out = () => setAuth(false);
     window.addEventListener("reinman:logout", out);
     return () => window.removeEventListener("reinman:logout", out);
   }, []);
   if (auth === null) return <div className="boot"><Logo size={56} /></div>;
-  return auth ? <Shell /> : <Login onDone={() => setAuth(true)} />;
+  return auth ? <Shell authRequired={authRequired} /> : <Login onDone={() => setAuth(true)} />;
 }
 
 createRoot(document.getElementById("root")!).render(
