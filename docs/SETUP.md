@@ -40,9 +40,8 @@ browser extracts the text; the hourly monitor job (or `reinman documents`) scans
 to stored races by horse names, keeps each horse's passage for the race page, and extracts
 workouts (standard "date track distance condition time grade rank/field" lines, which feed
 the model's workout features) and payout lines. JSON in the canonical format is imported
-directly. Mark Equibase research files **Research only**: they are scanned and kept, but
-never shown on race pages or used for live picks. Scanned images (no text layer) aren't
-supported yet.
+directly. Click the filename to view an upload. Earlier uploads show the extracted text
+because only the text was stored. Scanned images require a text layer before upload.
 
 ## 2. Racing data
 No live source is connected (no free, permitted U.S. feed exists — see
