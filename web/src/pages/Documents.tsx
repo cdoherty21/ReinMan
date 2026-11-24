@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "../main";
 import { api, stamp, todayET, useApi } from "../lib";
 import { extractText } from "../extract";
@@ -23,6 +23,13 @@ export function Documents() {
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<string[]>([]);
   const [open, setOpen] = useState<number | null>(null);
+
+  const awaitingScan = data?.rows.some((doc) => doc.status === "pending") ?? false;
+  useEffect(() => {
+    if (!awaitingScan) return;
+    const timer = window.setInterval(reload, 5000);
+    return () => window.clearInterval(timer);
+  }, [awaitingScan, reload]);
 
   async function upload() {
     setBusy(true);
@@ -49,6 +56,14 @@ export function Documents() {
         out.push(`✗ ${f.name} — ${(e as Error).message}`);
       }
       setLog([...out]);
+    }
+    if (out.some((line) => line.startsWith("✓"))) {
+      try {
+        const { started } = await api<{ started: boolean }>("/api/documents/scan", { method: "POST", body: "{}" });
+        setLog([...out, started ? "Automatic scan requested." : "The scheduled scanner will pick up these files."]);
+      } catch {
+        setLog([...out, "The scheduled scanner will pick up these files."]);
+      }
     }
     setFiles([]);
     setBusy(false);
@@ -116,7 +131,7 @@ function DocRow({ d, open, onToggle }: { d: Doc; open: boolean; onToggle: () => 
         <td className="small">{stamp(d.uploaded_at)}</td>
         <td><a href={`/api/documents/${d.id}/file`} target="_blank" rel="noopener">{d.filename}</a></td>
         <td>
-          {d.status === "pending" ? <span className="muted">Waiting for next scan</span> :
+          {d.status === "pending" ? <span className="muted">Awaiting automatic scan</span> :
             d.status === "waiting" ? <span className="muted">Waiting for the race card</span> :
             d.status === "error" ? <span className="neg" title={d.error ?? ""}>Error</span> : <span className="pos">Scanned</span>}
         </td>

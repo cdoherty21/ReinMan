@@ -218,8 +218,9 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="reinman", description="Rein Man — The Intelligence Behind the Odds.")
     ap.add_argument("--db", help="sqlite:///path.db or d1 (default: $REINMAN_DB)")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for c in ("init", "monitor", "daily", "lock", "grade", "stats", "train", "backtest", "documents"):
+    for c in ("init", "monitor", "daily", "lock", "grade", "stats", "train", "backtest"):
         sub.add_parser(c)
+    sub.add_parser("documents").add_argument("--rescan", action="store_true")
     for c in ("ingest", "results", "predict", "source-check"):
         s = sub.add_parser(c)
         s.add_argument("--date", default=None)
@@ -257,7 +258,7 @@ def main(argv=None) -> int:
         "results": lambda: job(db, "results", do_results, db, d),
         "predict": lambda: job(db, "predict", predict.predict_date, db, d),
         "lock": lambda: job(db, "lock", predict.lock_due, db),
-        "documents": lambda: job(db, "documents", documents.process_pending, db),
+        "documents": lambda: job(db, "documents", documents.process_queue, db, getattr(a, "rescan", False)),
         "grade": lambda: job(db, "grade", grading.grade_all, db),
         "stats": lambda: job(db, "stats", performance.refresh_stats, db),
         "train": lambda: job(db, "train", train.train_and_maybe_promote, db),

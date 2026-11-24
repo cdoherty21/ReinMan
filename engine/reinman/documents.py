@@ -331,3 +331,22 @@ def process_pending(db: Database, limit: int = 20) -> dict:
                        [now_iso(), str(e)[:500], doc["id"]])
             errors += 1
     return {"processed": done, "errors": errors}
+
+def process_queue(db: Database, rescan: bool = False) -> dict:
+    if rescan:
+        # Preserve already-imported canonical result files. Replaying one can
+        # replace a newer card with historical values.
+        predicate = """status IN ('processed', 'error', 'waiting')
+                       AND COALESCE(json_extract(summary, '$.canonical_import'), 0) = 0"""
+        db.execute(f"DELETE FROM document_notes WHERE document_id IN (SELECT id FROM documents WHERE {predicate})")
+        db.execute(f"UPDATE documents SET status='pending', processed_at=NULL, summary=NULL, error=NULL WHERE {predicate}")
+    total = {"processed": 0, "errors": 0}
+    while True:
+        batch = process_pending(db)
+        for key in total:
+            total[key] += batch[key]
+        pending = db.scalar("SELECT EXISTS(SELECT 1 FROM documents WHERE status='pending')")
+        if not pending and batch["processed"] + batch["errors"] == 0:
+            break
+    total["waiting_for_cards"] = db.scalar("SELECT COUNT(*) FROM documents WHERE status='waiting'")
+    return total

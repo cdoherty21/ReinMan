@@ -20,3 +20,6 @@ jobs:
         run: sed -i "s/00000000-0000-0000-0000-000000000000/${{ secrets.D1_DATABASE_ID }}/" worker/wrangler.jsonc
       - run: npm run db:migrate:remote
       - run: npm run deploy
+      - name: Check immediate document dispatch configuration
+        run: |
+          npx wrangler secret list -c worker/wrangler.jsonc | jq -r 'if any(.[]; .name == "GITHUB_TOKEN") then "Document dispatch token is configured." else "Document dispatch token is missing. Scheduled scans remain available." end'

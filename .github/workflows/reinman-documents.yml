@@ -1,6 +1,11 @@
 name: reinman-documents
 on:
   workflow_dispatch:
+    inputs:
+      rescan:
+        description: Scan existing uploads again
+        type: boolean
+        default: false
   schedule:
     - cron: "17 * * * *"
 concurrency:
@@ -24,4 +29,7 @@ jobs:
         with: { python-version: "3.12", cache: pip, cache-dependency-path: engine/pyproject.toml }
       - run: command -v pdftotext || (sudo apt-get update && sudo apt-get install -y poppler-utils)
       - run: pip install -e .
-      - run: reinman documents
+      - if: inputs.rescan == true
+        run: reinman documents --rescan
+      - if: inputs.rescan != true
+        run: reinman documents
