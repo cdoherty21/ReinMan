@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "../main";
 import { api, stamp, todayET, useApi } from "../lib";
+import { expandArchive, MAX_FILE_BYTES } from "../archives";
 import { extractText } from "../extract";
 import { Empty, ErrorBox, Loading } from "./common";
 
@@ -34,9 +35,10 @@ export function Documents() {
   async function upload() {
     setBusy(true);
     const out: string[] = [];
-    for (const f of files) {
+    let uploaded = false;
+    async function uploadFile(f: File) {
       try {
-        if (f.size > 8 * 1024 * 1024) throw new Error("Original file exceeds 8 MB.");
+        if (f.size > MAX_FILE_BYTES) throw new Error("Original file exceeds 8 MB.");
         const { text, pages } = await extractText(f);
         const original = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
@@ -44,20 +46,43 @@ export function Documents() {
           reader.onload = () => resolve(String(reader.result).split(",", 2)[1]);
           reader.readAsDataURL(f);
         });
-        await api("/api/documents", {
+        const { duplicate } = await api<{ duplicate?: boolean }>("/api/documents", {
           method: "POST",
           body: JSON.stringify({
             filename: f.name, mime: f.type, size_bytes: f.size, text, original,
             race_date: raceDate || undefined, track_id: track.trim() || undefined,
           }),
         });
-        out.push(`✓ ${f.name} — ${text.length.toLocaleString()} characters${pages ? ` from ${pages} pages` : ""}`);
+        uploaded = true;
+        out.push(duplicate ? `↪ ${f.name} — Already uploaded` :
+          `✓ ${f.name} — ${text.length.toLocaleString()} characters${pages ? ` from ${pages} pages` : ""}`);
       } catch (e) {
         out.push(`✗ ${f.name} — ${(e as Error).message}`);
       }
       setLog([...out]);
     }
-    if (out.some((line) => line.startsWith("✓"))) {
+    for (const file of files) {
+      if (!/\.zip$/i.test(file.name) && !["application/zip", "application/x-zip-compressed"].includes(file.type)) {
+        await uploadFile(file);
+        continue;
+      }
+      try {
+        let found = false;
+        for await (const entry of expandArchive(file)) {
+          found = true;
+          if (typeof entry !== "string") await uploadFile(entry);
+          else {
+            out.push(`✗ ${entry}`);
+            setLog([...out]);
+          }
+        }
+        if (!found) out.push(`✗ ${file.name} — No supported documents in ZIP.`);
+      } catch (error) {
+        out.push(`✗ ${file.name} — ${(error as Error).message}`);
+      }
+      setLog([...out]);
+    }
+    if (uploaded) {
       try {
         const { started } = await api<{ started: boolean }>("/api/documents/scan", { method: "POST", body: "{}" });
         setLog([...out, started ? "Automatic scan requested." : "The scheduled scanner will pick up these files."]);
@@ -82,11 +107,11 @@ export function Documents() {
       <section className="card">
         <h2>Upload</h2>
         <p className="small muted">
-          Upload text-based PDFs, HTML, TXT, CSV, or Rein Man JSON up to 8 MB. Rein Man extracts useful racing details
+          Upload text-based PDFs, HTML, TXT, CSV, or Rein Man JSON up to 8 MB each. You can also upload a ZIP up to 64 MB. Rein Man extracts useful racing details
           and builds race cards from supported programs. Linked evidence appears on race pages.
         </p>
         <div className="upload-form">
-          <input type="file" multiple accept=".pdf,.html,.htm,.txt,.csv,.json,application/pdf,text/*"
+          <input type="file" multiple accept=".zip,.pdf,.html,.htm,.txt,.csv,.json,application/pdf,text/*"
             onChange={(e) => setFiles(Array.from(e.target.files ?? []))} aria-label="Choose documents" />
           <label>Race date (optional) <input type="date" value={raceDate} max={undefined} onChange={(e) => setRaceDate(e.target.value)} /></label>
           <label>Track code (optional) <input value={track} placeholder="e.g. FL" maxLength={8} size={6} onChange={(e) => setTrack(e.target.value)} /></label>

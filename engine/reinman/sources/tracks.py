@@ -6,6 +6,8 @@ the NWS weather supplement. Add tracks here as they appear.
 """
 from __future__ import annotations
 
+from ..util import norm_name
+
 TRACKS: dict[str, dict] = {
     "AQU": {"name": "Aqueduct", "tz": "America/New_York", "lat": 40.672, "lon": -73.830},
     "BAQ": {"name": "Belmont at Aqueduct", "tz": "America/New_York", "lat": 40.672, "lon": -73.830},
@@ -63,3 +65,18 @@ TRACKS: dict[str, dict] = {
 
 def track_info(track_id: str) -> dict:
     return TRACKS.get((track_id or "").upper(), {})
+
+
+TRACK_NAMES = {norm_name(info["name"]): code for code, info in TRACKS.items()}
+TRACK_NAMES.update({
+    "SARATOGA RACE COURSE": "SAR", "SANTA ANITA PARK": "SA",
+    "MAHONING VALLEY RACE COURSE": "MVR", "MAHONING VALLEY RACECOURSE": "MVR",
+    "MOUNTAINEER PARK": "MNR", "MOUNTAINEER CASINO RACETRACK RESORT": "MNR",
+    "PHILADELPHIA PARK": "PRX", "FINGER LAKES GAMING RACETRACK": "FL",
+})
+TRACK_CODE_ALIASES = {"PHI": "PRX", "AQU": "AQU", "SAR": "SAR", "SA": "SA"}
+
+
+def canonical_track_code(name: str | None, code: str | None = None) -> str | None:
+    raw = (code or "").upper()
+    return TRACK_NAMES.get(norm_name(name)) or TRACK_CODE_ALIASES.get(raw) or (raw if raw in TRACKS else None)

@@ -29,6 +29,7 @@ from .db import Database
 from . import programs
 from .ingest import race_id_for, store_card
 from .sources.otb import _PAYOUT
+from .sources.tracks import canonical_track_code
 from .util import norm_name, now_iso, to_float
 from .wagertypes import normalize_wager_type
 
@@ -173,9 +174,9 @@ def parse_payouts(text: str) -> list[dict]:
 def scan(db: Database, doc: dict, text: str) -> dict:
     lines = text.splitlines()
     norm_lines = [" " + norm_name(x) + " " for x in lines]
-    races = candidate_races(db, doc, text)
-    if doc.get("program_race_ids"):
-        races = [race for race in races if race["race_id"] in doc["program_race_ids"]]
+    ids = sorted(doc.get("program_race_ids", []))
+    races = (db.query(f"SELECT * FROM races WHERE race_id IN ({','.join('?' * len(ids))})", ids)
+             if ids else candidate_races(db, doc, text))
     by_race = defaultdict(list)
     if races:
         ids = [r["race_id"] for r in races]
@@ -278,6 +279,19 @@ def _store_program_cards(db: Database, cards: list[dict]) -> tuple[list[str], se
     for card in cards:
         meet, race = card["meet"], card["races"][0]
         rid = race_id_for(meet["track_id"], meet["race_date"], race["race_number"])
+        # Older feeds used the full track name or a vendor code for some meets.
+        if not db.scalar("SELECT EXISTS(SELECT 1 FROM races WHERE race_id=?)", [rid]):
+            matches = [
+                row for row in db.query(
+                    "SELECT r.race_id, r.track_id, t.name FROM races r JOIN tracks t ON t.track_id=r.track_id "
+                    "WHERE r.race_date=? AND r.race_number=? AND EXISTS (SELECT 1 FROM runners rn WHERE rn.race_id=r.race_id)",
+                    [meet["race_date"], race["race_number"]],
+                )
+                if canonical_track_code(row["name"], row["track_id"]) == meet["track_id"]
+                and row["race_id"] == race_id_for(row["track_id"], meet["race_date"], race["race_number"])
+            ]
+            if len(matches) == 1:
+                rid = matches[0]["race_id"]
         race_ids.add(rid)
         if db.scalar("SELECT EXISTS(SELECT 1 FROM runners WHERE race_id=?)", [rid]):
             if race["post_time"]:
@@ -312,7 +326,7 @@ def process_pending(db: Database, limit: int = 20) -> dict:
                     meet = cards[0]["meet"]
                     doc = dict(doc, race_date=meet["race_date"], track_id=meet["track_id"], program_race_ids=race_ids)
                 card = pocket_card(text)
-                if card and not db.scalar(
+                if card and not race_ids and not db.scalar(
                     "SELECT EXISTS(SELECT 1 FROM races r JOIN runners rn ON rn.race_id=r.race_id "
                     "WHERE r.track_id=? AND r.race_date=? AND r.race_number=?)", card
                 ):

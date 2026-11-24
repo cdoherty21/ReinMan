@@ -226,7 +226,12 @@ const routes: [string, RegExp, Handler][] = [
           env.DB,
           `SELECT n.id, n.document_id, n.program_number, n.horse_name, n.kind, n.text, n.data, d.filename, d.uploaded_at
            FROM document_notes n JOIN documents d ON d.id = n.document_id
-           WHERE n.race_id = ? AND d.status = 'processed' ORDER BY n.id`,
+           WHERE n.race_id = ? AND d.status = 'processed'
+           AND n.id IN (
+             SELECT MIN(n2.id) FROM document_notes n2 JOIN documents d2 ON d2.id = n2.document_id
+             WHERE n2.race_id = n.race_id AND d2.status = 'processed'
+             GROUP BY n2.race_id, n2.program_number, n2.kind, n2.text
+           ) ORDER BY n.id`,
           id,
         )
       ).map((n) => ({ ...n, data: parseJSON((n as { data: unknown }).data) }));
@@ -474,13 +479,35 @@ const routes: [string, RegExp, Handler][] = [
         if (original.length > MAX_DOC_BYTES) return json({ error: "Original file exceeds 8 MB." }, 413);
         if (!original.length) return json({ error: "Original file is empty." }, 400);
       }
-      const ins = await env.DB.prepare(
-        "INSERT INTO documents (filename, mime, size_bytes, chars, race_date, track_id, status) VALUES (?,?,?,?,?,?,'uploading')",
-      )
-        .bind(filename, String(b.mime || "").slice(0, 100) || null, original?.length ?? (Number(b.size_bytes) || null),
-          text.length, raceDate, track)
-        .run();
-      const id = ins.meta.last_row_id;
+      // Include optional card hints so a corrected hint can be submitted for the same file.
+      const content = original === undefined ? new TextEncoder().encode(text)
+        : Uint8Array.from(original, (c) => c.charCodeAt(0));
+      const digest = await crypto.subtle.digest("SHA-256", content);
+      const fingerprint = JSON.stringify([Array.from(new Uint8Array(digest)), raceDate, track]);
+      const findUpload = () => first<{ id: number; status: string }>(env.DB,
+        "SELECT d.id, d.status FROM document_upload_fingerprints f JOIN documents d ON d.id=f.document_id WHERE f.fingerprint=?",
+        fingerprint);
+      const duplicateResponse = (doc: { id: number; status: string }) =>
+        doc.status === "uploading"
+          ? json({ error: "This file is already being uploaded. Try again if it does not appear." }, 409)
+          : json({ ok: true, id: doc.id, duplicate: true });
+      const existing = await findUpload();
+      if (existing) return duplicateResponse(existing);
+      let id: number;
+      try {
+        const [ins] = await env.DB.batch([
+          env.DB.prepare(
+            "INSERT INTO documents (filename, mime, size_bytes, chars, race_date, track_id, status) VALUES (?,?,?,?,?,?,'uploading')",
+          ).bind(filename, String(b.mime || "").slice(0, 100) || null, original?.length ?? (Number(b.size_bytes) || null),
+            text.length, raceDate, track),
+          env.DB.prepare("INSERT INTO document_upload_fingerprints VALUES (?, last_insert_rowid())").bind(fingerprint),
+        ]);
+        id = ins.meta.last_row_id;
+      } catch (error) {
+        const duplicate = await findUpload();
+        if (duplicate) return duplicateResponse(duplicate);
+        throw error;
+      }
       const stmts = [];
       for (let i = 0, seq = 0; i < text.length; i += CHUNK_CHARS, seq++) {
         stmts.push(env.DB.prepare("INSERT INTO document_chunks (document_id, seq, text) VALUES (?,?,?)")
