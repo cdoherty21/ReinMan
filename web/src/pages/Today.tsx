@@ -1,5 +1,5 @@
 import { Link } from "../main";
-import { postTime, surfaceName, useApi } from "../lib";
+import { postTime, shiftDate, surfaceName, useApi } from "../lib";
 import { Confidence, DatePicker, Decision, Empty, ErrorBox, Loading, RM, useDateParam } from "./common";
 
 export type RaceRow = {
@@ -60,19 +60,35 @@ export function Today() {
       )}
       {races.length > 0 && (
         <>
-          <section className="tiles">
-            <div className="tile"><span>Racetracks</span><b>{tracks.length}</b></div>
-            <div className="tile"><span>Races</span><b>{races.length}</b></div>
-            <div className="tile"><span>Still to run</span><b>{upcoming.length}</b></div>
-            <div className="tile gold"><span>Rein Man is playing</span><b>{plays.length}</b></div>
+          <section className="strip" aria-label="Summary">
+            <div><b>{tracks.length}</b><span>{tracks.length === 1 ? "Track" : "Tracks"}</span></div>
+            <div><b>{races.length}</b><span>{races.length === 1 ? "Race" : "Races"}</span></div>
+            <div><b>{upcoming.length}</b><span>To run</span></div>
+            <div className={plays.length > 0 ? "gold" : ""}><b>{plays.length}</b><span>{plays.length === 1 ? "Play" : "Plays"}</span></div>
           </section>
           <section className="chips" aria-label="Racetracks">
+            <span className="chips-label">{tracks.length === 1 ? "Track" : "Tracks"}</span>
             {tracks.map(([id, name]) => (
               <Link key={id} to={`/cards?date=${date}&track=${id}`} className="chip">{name}</Link>
             ))}
           </section>
 
-          <section className="card">
+          {upcoming.length === 0 && (
+            <section className="card rest">
+              <div className="rest-icon" aria-hidden="true">✓</div>
+              <div className="rest-text">
+                <h2>That's the card for the day</h2>
+                <p className="muted">
+                  Every race has been run.{plays.length === 0 && " Nothing cleared Rein Man's value threshold, and he's happy to wait."}
+                </p>
+              </div>
+              <button className="btn ghost" onClick={() => setDate(shiftDate(date, 1))}>
+                Next card: {new Date(`${shiftDate(date, 1)}T12:00:00`).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })} ›
+              </button>
+            </section>
+          )}
+
+          {upcoming.length > 0 && <section className="card">
             <h2>Rein Man's Best Bets</h2>
             {plays.length === 0 ? (
               <p className="muted">No upcoming race clears Rein Man's value threshold right now. He's happy to wait.</p>
@@ -90,7 +106,7 @@ export function Today() {
                 ))}
               </ul>
             )}
-          </section>
+          </section>}
 
           {values.length > 0 && (
             <section className="card">
@@ -110,10 +126,12 @@ export function Today() {
             </section>
           )}
 
-          <section className="card">
-            <h2>Upcoming Races</h2>
-            {upcoming.length === 0 ? <p className="muted">All races for this date have been run.</p> : <RaceTable rows={upcoming} />}
-          </section>
+          {upcoming.length > 0 && (
+            <section className="card">
+              <h2>Upcoming Races</h2>
+              <RaceTable rows={upcoming} />
+            </section>
+          )}
           {done.length > 0 && (
             <section className="card">
               <h2>Completed &amp; Results</h2>
@@ -126,36 +144,49 @@ export function Today() {
   );
 }
 
+/** "6f Dirt · Allowance · 9 runners · Fast", leaving out anything not yet known. */
+export function conditions(r: RaceRow) {
+  const dist = r.distance_desc || r.distance_yards ? distance(r) : "";
+  const course = [dist, r.surface ? surfaceName(r.surface) : ""].filter(Boolean).join(" ");
+  return [course, r.race_class || r.race_type, r.field_size ? `${r.field_size} runners` : "", r.track_condition]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function Outcome({ r }: { r: RaceRow }) {
+  if (r.is_cancelled) return <span className="outcome void">Cancelled</span>;
+  if (!r.winner) return <span className="muted">{r.locked ? "Locked · awaiting result" : r.top1 ? "Awaiting result" : "No pick made"}</span>;
+  const f = r.top1_finish;
+  const kind = f === 1 ? "won" : f && f <= 3 ? "placed" : f ? "lost" : "void";
+  const label = f === 1 ? "Won" : f ? `Pick ${ordinal(f)}` : "No pick";
+  return (
+    <span>
+      <span className={`outcome ${kind}`}>{label}</span> <span className="muted small">Winner #{r.winner}</span>
+    </span>
+  );
+}
+
 export function RaceTable({ rows, completed }: { rows: RaceRow[]; completed?: boolean }) {
   return (
     <div className="table-wrap">
       <table className="data">
         <thead>
           <tr>
-            <th>Post</th><th>Race</th><th className="hide-sm">Conditions</th><th>Rein Man's Picks</th>
-            <th>Conf.</th><th>{completed ? "Result" : "Call"}</th>
+            <th className="ctr">Post</th><th>Race</th><th className="hide-sm">Conditions</th><th>Rein Man's Picks</th>
+            <th className="ctr">Conf.</th><th>{completed ? "Result" : "Call"}</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.race_id} className={r.is_cancelled ? "cancelled" : ""}>
-              <td className="num">{postTime(r.post_time)}</td>
+              <td className="ctr num">{r.post_time ? postTime(r.post_time) : ""}</td>
               <td><Link to={`/race/${r.race_id}`}><b>{r.track_id}</b> R{r.race_number}</Link></td>
-              <td className="hide-sm muted">
-                {distance(r)} {surfaceName(r.surface)} · {r.race_class || r.race_type || "—"} · {r.field_size} runners
-                {r.track_condition ? ` · ${r.track_condition}` : ""}
-              </td>
+              <td className="hide-sm muted">{conditions(r)}</td>
               <td><PickCell r={r} /></td>
-              <td><Confidence level={r.confidence} /></td>
+              <td className="ctr">{r.confidence ? <Confidence level={r.confidence} /> : null}</td>
               <td>
                 {completed || r.winner || r.is_cancelled || r.locked ? (
-                  r.is_cancelled ? <span className="muted">Cancelled</span> :
-                  r.winner ? (
-                    <span>
-                      Won by #{r.winner}{" "}
-                      {r.top1_finish === 1 ? <span className="hit">✓ Rein Man</span> : r.top1_finish ? <span className="muted">(pick {ordinal(r.top1_finish)})</span> : null}
-                    </span>
-                  ) : <span className="muted">{r.locked ? "Locked · awaiting result" : "No selection recorded"}</span>
+                  <Outcome r={r} />
                 ) : (
                   <Decision d={r.decision} />
                 )}
