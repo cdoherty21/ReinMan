@@ -3,26 +3,16 @@ from __future__ import annotations
 
 
 from .base import ALL_CAPABILITIES, SourceAdapter
-from .racingapi import RacingApiNA
 from .puntersedge import PuntersEdge
 
 
 def configured_sources(reserve=None) -> list[SourceAdapter]:
-    """Live sources enabled through environment variables."""
-    out: list[SourceAdapter] = []
-    ra = RacingApiNA()
-    if ra.configured:
-        out.append(ra)
-    else:
-        free = PuntersEdge(reserve)
-        if free.configured:
-            out.append(free)
-    return out
+    """Live sources enabled through environment variables (PUNTERSEDGE_API_KEY)."""
+    free = PuntersEdge(reserve)
+    return [free] if free.configured else []
 
 
 def get_source(name: str) -> SourceAdapter:
-    if name in ("theracingapi_na", "racingapi"):
-        return RacingApiNA()
     if name == "puntersedge":
         return PuntersEdge()
     if name.startswith("file:"):
@@ -31,4 +21,4 @@ def get_source(name: str) -> SourceAdapter:
     raise KeyError(f"Unknown source {name!r}")
 
 
-__all__ = ["ALL_CAPABILITIES", "SourceAdapter", "RacingApiNA", "configured_sources", "get_source"]
+__all__ = ["ALL_CAPABILITIES", "SourceAdapter", "configured_sources", "get_source"]

@@ -51,7 +51,6 @@ def test_saved_otb_result_can_be_imported_twice(tmp_path):
 
 
 def test_free_jobs_share_provider_budget(monkeypatch):
-    monkeypatch.delenv("RACINGAPI_USERNAME", raising=False)
     monkeypatch.setenv("PUNTERSEDGE_API_KEY", "test-key")
     db = SQLiteDatabase()
     db.migrate()
