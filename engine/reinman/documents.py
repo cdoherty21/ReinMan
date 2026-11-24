@@ -13,7 +13,7 @@ pending document the scanner:
    * payout lines such as ``$2 Exacta (3-5) Paid $45.60``;
    * scratch mentions next to a horse.
 
-Workouts from documents not marked research-only are merged into the runner's
+Workouts from documents are merged into the runner's
 ``extra.workouts``, where the feature builder reads them. Nothing is guessed: text
 that matches no known format is kept as a passage only.
 """
@@ -45,6 +45,7 @@ _WORK = re.compile(
     r"(?P<rank>\d{1,3})/(?P<of>\d{1,3})")
 _ISO_DATE = re.compile(r"\b(20\d{2})-(\d{2})-(\d{2})\b")
 _US_DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(20\d{2}|\d{2})\b")
+_POCKET_CARD = re.compile(r"(?im)^\s*([A-Z0-9]{1,8})-(\d{1,2}/\d{1,2}/20\d{2})-(\d{1,2})\s*$")
 _LONG_DATE = re.compile(rf"\b({_MON})\s+(\d{{1,2}}),?\s+(20\d{{2}})\b", re.I)
 # Same payout grammar as the OTB reader, but the colon after "Paid" is optional in documents.
 _DOC_PAYOUT = re.compile(_PAYOUT.pattern.replace(r"(?:Paid\s*)?:\s*\$", r"(?:Paid\s*)?:?\s*\$"), _PAYOUT.flags)
@@ -78,23 +79,38 @@ def _safe_date(y: int, m: int, d: int) -> str | None:
         return None
 
 
+def pocket_card(text: str) -> tuple[str, str, int] | None:
+    cards = set(_POCKET_CARD.findall(text))
+    if len(cards) != 1:
+        return None
+    track, raw_date, race_number = cards.pop()
+    month, day, year = map(int, raw_date.split("/"))
+    race_date = _safe_date(year, month, day)
+    return (track.upper(), race_date, int(race_number)) if race_date else None
+
+
 def candidate_races(db: Database, doc: dict, text: str) -> list[dict]:
+    card = pocket_card(text)
+    if card:
+        return db.query("SELECT * FROM races WHERE track_id=? AND race_date=? AND race_number=?", card)
     if doc.get("race_date"):
-        d = date.fromisoformat(doc["race_date"])
-        days = {(d + timedelta(days=k)).isoformat() for k in (-1, 0, 1)}
+        days = {doc["race_date"]}
     else:
         days = dates_in(text)
         up = date.fromisoformat(doc["uploaded_at"][:10])
         days |= {(up + timedelta(days=k)).isoformat() for k in range(-7, 4)}
-    days = sorted(x for x in days if x)
-    if not days:
-        return []
-    q = f"SELECT * FROM races WHERE race_date IN ({','.join('?' * len(days))})"
-    params: list = list(days)
-    if doc.get("track_id"):
-        q += " AND track_id=?"
-        params.append(doc["track_id"].upper())
-    return db.query(q, params)
+    track = doc.get("track_id")
+    days = sorted(days)
+    races = []
+    step = db.max_params - 1
+    for i in range(0, len(days), step):
+        params = days[i:i + step]
+        query = f"SELECT * FROM races WHERE race_date IN ({','.join('?' * len(params))})"
+        if track:
+            query += " AND track_id=?"
+            params.append(track.upper())
+        races.extend(db.query(query, params))
+    return races
 
 
 def _work_date(raw: str, race_date: str) -> str | None:
@@ -185,7 +201,6 @@ def scan(db: Database, doc: dict, text: str) -> dict:
                 hits[(rid, prog)] = i
     starts = sorted(set(hits.values()))
     notes, workouts_applied, horses = [], 0, 0
-    research = bool(doc.get("research_only"))
     for (rid, prog), i in sorted(hits.items(), key=lambda kv: kv[1]):
         later = [s for s in starts if s > i]
         end = min(later[0] if later else len(lines), i + MAX_PASSAGE_LINES)
@@ -201,7 +216,7 @@ def scan(db: Database, doc: dict, text: str) -> dict:
         for w in works:
             notes.append({"race_id": rid, "program_number": prog, "horse_name": runner["horse_name"],
                           "kind": "workout", "text": w["source_text"], "data": w})
-        if works and not research:
+        if works:
             workouts_applied += _merge_workouts(db, runner, works, doc["id"])
     for p in parse_payouts(text):
         notes.append({"race_id": linked[0] if len(linked) == 1 else None, "program_number": None,
@@ -211,8 +226,7 @@ def scan(db: Database, doc: dict, text: str) -> dict:
             "workouts": sum(1 for n in notes if n["kind"] == "workout"),
             "workouts_applied_to_cards": workouts_applied,
             "payouts": sum(1 for n in notes if n["kind"] == "payout"),
-            "scratch_mentions": sum(1 for n in notes if n["kind"] == "scratch"),
-            "research_only": research}
+            "scratch_mentions": sum(1 for n in notes if n["kind"] == "scratch")}
 
 
 def _merge_workouts(db: Database, runner: dict, works: list[dict], doc_id: int) -> int:
@@ -244,7 +258,11 @@ def _try_canonical(db: Database, text: str) -> dict | None:
 
 
 def process_pending(db: Database, limit: int = 20) -> dict:
-    docs = db.query("SELECT * FROM documents WHERE status='pending' ORDER BY id LIMIT ?", [limit])
+    docs = db.query(
+        "SELECT d.* FROM documents d WHERE d.status='pending' OR (d.status='waiting' AND EXISTS ("
+        "SELECT 1 FROM races r JOIN runners rn ON rn.race_id=r.race_id "
+        "WHERE r.track_id=d.track_id AND r.race_date=d.race_date "
+        "AND r.race_number=json_extract(d.summary, '$.waiting_for_race'))) ORDER BY d.id LIMIT ?", [limit])
     done = errors = 0
     for doc in docs:
         try:
@@ -253,6 +271,15 @@ def process_pending(db: Database, limit: int = 20) -> dict:
             if doc["filename"].lower().endswith(".json"):
                 summary = _try_canonical(db, text)
             if summary is None:
+                card = pocket_card(text)
+                if card and not db.scalar(
+                    "SELECT EXISTS(SELECT 1 FROM races r JOIN runners rn ON rn.race_id=r.race_id "
+                    "WHERE r.track_id=? AND r.race_date=? AND r.race_number=?)", card
+                ):
+                    track, race_date, race_number = card
+                    db.execute("UPDATE documents SET status='waiting', race_date=?, track_id=?, summary=? WHERE id=?",
+                               [race_date, track, json.dumps({"waiting_for_race": race_number}), doc["id"]])
+                    continue
                 summary = scan(db, doc, text)
             db.execute("UPDATE documents SET status='processed', processed_at=?, summary=? WHERE id=?",
                        [now_iso(), json.dumps(summary), doc["id"]])

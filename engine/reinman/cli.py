@@ -190,11 +190,12 @@ def daily(db: Database) -> dict:
     d = today()
     out = {}
     sources = automatic_sources(db)
-    out["documents"] = job(db, "documents", documents.process_pending, db)
     for day in (_shift(d, -1), d):
         out[f"results_{day}"] = job(db, "results", do_results, db, day, sources)
     for day in (d, _shift(d, 1)):
         out[f"ingest_{day}"] = job(db, "ingest", do_ingest, db, day, sources)
+    out["documents"] = job(db, "documents", documents.process_pending, db)
+    for day in (d, _shift(d, 1)):
         out[f"predict_{day}"] = job(db, "predict", predict.predict_date, db, day)
     out["lock"] = job(db, "lock", predict.lock_due, db)
     out["grade"] = job(db, "grade", grading.grade_all, db)

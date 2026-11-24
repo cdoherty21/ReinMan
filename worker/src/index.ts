@@ -25,6 +25,8 @@ export interface Env {
 
 const MAX_DOC_CHARS = 1_000_000;
 const CHUNK_CHARS = 40_000;
+const MAX_DOC_BYTES = 8 * 1024 * 1024;
+const FILE_CHUNK_BYTES = 192 * 1024;
 const NOW_SQL = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 
 const json = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
@@ -195,7 +197,7 @@ const routes: [string, RegExp, Handler][] = [
           env.DB,
           `SELECT n.id, n.document_id, n.program_number, n.horse_name, n.kind, n.text, n.data, d.filename, d.uploaded_at
            FROM document_notes n JOIN documents d ON d.id = n.document_id
-           WHERE n.race_id = ? AND d.research_only = 0 ORDER BY n.id`,
+           WHERE n.race_id = ? AND d.status = 'processed' ORDER BY n.id`,
           id,
         )
       ).map((n) => ({ ...n, data: parseJSON((n as { data: unknown }).data) }));
@@ -357,8 +359,8 @@ const routes: [string, RegExp, Handler][] = [
       const rows = (
         await all(
           env.DB,
-          `SELECT id, uploaded_at, filename, mime, size_bytes, chars, race_date, track_id, research_only, status,
-                  processed_at, summary, error FROM documents ORDER BY id DESC LIMIT 200`,
+          `SELECT id, uploaded_at, filename, mime, size_bytes, chars, race_date, track_id, status,
+                  processed_at, summary, error FROM documents WHERE status != 'uploading' ORDER BY id DESC LIMIT 200`,
         )
       ).map((d) => ({ ...d, summary: parseJSON((d as { summary: unknown }).summary) }));
       return json({ rows });
@@ -368,7 +370,7 @@ const routes: [string, RegExp, Handler][] = [
     "GET",
     /^\/api\/documents\/(\d+)$/,
     async (_req, env, _u, m) => {
-      const doc = await first(env.DB, "SELECT * FROM documents WHERE id = ?", Number(m[1]));
+      const doc = await first(env.DB, "SELECT * FROM documents WHERE id = ? AND status != 'uploading'", Number(m[1]));
       if (!doc) return json({ error: "not found" }, 404);
       const notes = (await all(env.DB, "SELECT * FROM document_notes WHERE document_id = ? ORDER BY id", Number(m[1]))).map(
         (n) => ({ ...n, data: parseJSON((n as { data: unknown }).data) }),
@@ -377,32 +379,90 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   [
+    "GET",
+    /^\/api\/documents\/(\d+)\/file$/,
+    async (_req, env, url, m) => {
+      const id = Number(m[1]);
+      const doc = await first<{ filename: string }>(
+        env.DB, "SELECT filename FROM documents WHERE id = ? AND status != 'uploading'", id,
+      );
+      if (!doc) return json({ error: "not found" }, 404);
+      const chunks = await all<{ bytes: number[] }>(
+        env.DB, "SELECT bytes FROM document_file_chunks WHERE document_id = ? ORDER BY seq", id,
+      );
+      const headers = new Headers({ "Cache-Control": "private, no-store" });
+      const download = url.searchParams.has("download");
+      if (!chunks.length || (!download && /\.html?$/i.test(doc.filename))) {
+        const text = await all<{ text: string }>(
+          env.DB, "SELECT text FROM document_chunks WHERE document_id = ? ORDER BY seq", id,
+        );
+        headers.set("Content-Type", "text/plain; charset=utf-8");
+        if (download) headers.set("Content-Disposition", 'attachment; filename="extracted-text.txt"');
+        return new Response(text.map((row) => row.text).join(""), { headers });
+      }
+      const bytes = chunks.map((row) => Uint8Array.from(row.bytes));
+      const pdf = String.fromCharCode(...bytes[0].slice(0, 5)) === "%PDF-";
+      // Only native PDFs and inert text are displayed on the authenticated origin.
+      headers.set("Content-Type", download ? "application/octet-stream" : pdf ? "application/pdf" : "text/plain; charset=utf-8");
+      const name = encodeURIComponent(doc.filename.replace(/[\uD800-\uDFFF]/gu, "\uFFFD")).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16)}`);
+      headers.set("Content-Disposition", `${download ? "attachment" : "inline"}; filename*=UTF-8''${name}`);
+      return new Response(new Blob(bytes), { headers });
+    },
+  ],
+  [
     "POST",
     /^\/api\/documents$/,
     async (req, env) => {
       const b = (await req.json()) as {
         filename?: string; mime?: string; size_bytes?: number; text?: string;
-        race_date?: string; track_id?: string; research_only?: boolean;
+        race_date?: string; track_id?: string; original?: string;
       };
       const text = typeof b.text === "string" ? b.text : "";
       const filename = String(b.filename || "").slice(0, 200);
-      if (!filename || text.trim().length < 20)
+      if (!filename || !text.trim())
         return json({ error: "No readable text in this document. Scanned images aren't supported yet." }, 400);
       if (text.length > MAX_DOC_CHARS) return json({ error: `Document too large (over ${MAX_DOC_CHARS.toLocaleString()} characters).` }, 413);
       const raceDate = /^\d{4}-\d{2}-\d{2}$/.test(b.race_date ?? "") ? b.race_date : null;
       const track = /^[A-Za-z0-9_]{1,8}$/.test(b.track_id ?? "") ? b.track_id!.toUpperCase() : null;
+      let original: string | undefined;
+      if (b.original !== undefined) {
+        if (typeof b.original !== "string") return json({ error: "Invalid original file." }, 400);
+        if (b.original.length > Math.ceil(MAX_DOC_BYTES / 3) * 4)
+          return json({ error: "Original file exceeds 8 MB." }, 413);
+        try {
+          original = atob(b.original);
+        } catch {
+          return json({ error: "Invalid original file." }, 400);
+        }
+        if (original.length > MAX_DOC_BYTES) return json({ error: "Original file exceeds 8 MB." }, 413);
+        if (!original.length) return json({ error: "Original file is empty." }, 400);
+      }
       const ins = await env.DB.prepare(
-        "INSERT INTO documents (filename, mime, size_bytes, chars, race_date, track_id, research_only) VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO documents (filename, mime, size_bytes, chars, race_date, track_id, status) VALUES (?,?,?,?,?,?,'uploading')",
       )
-        .bind(filename, String(b.mime || "").slice(0, 100) || null, Number(b.size_bytes) || null, text.length, raceDate, track, b.research_only ? 1 : 0)
+        .bind(filename, String(b.mime || "").slice(0, 100) || null, original?.length ?? (Number(b.size_bytes) || null),
+          text.length, raceDate, track)
         .run();
       const id = ins.meta.last_row_id;
       const stmts = [];
       for (let i = 0, seq = 0; i < text.length; i += CHUNK_CHARS, seq++) {
-        stmts.push(env.DB.prepare("INSERT INTO document_chunks (document_id, seq, text) VALUES (?,?,?)").bind(id, seq, text.slice(i, i + CHUNK_CHARS)));
+        stmts.push(env.DB.prepare("INSERT INTO document_chunks (document_id, seq, text) VALUES (?,?,?)")
+          .bind(id, seq, text.slice(i, i + CHUNK_CHARS)));
       }
-      for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
-      return json({ ok: true, id, chunks: stmts.length }, 201);
+      if (original) {
+        for (let i = 0, seq = 0; i < original.length; i += FILE_CHUNK_BYTES, seq++) {
+          const bytes = Uint8Array.from(original.slice(i, i + FILE_CHUNK_BYTES), (c) => c.charCodeAt(0));
+          stmts.push(env.DB.prepare("INSERT INTO document_file_chunks (document_id, seq, bytes) VALUES (?,?,?)")
+            .bind(id, seq, bytes.buffer));
+        }
+      }
+      try {
+        await env.DB.batch([...stmts, env.DB.prepare("UPDATE documents SET status = 'pending' WHERE id = ?").bind(id)]);
+      } catch (error) {
+        await env.DB.prepare("DELETE FROM documents WHERE id = ? AND status = 'uploading'").bind(id).run();
+        throw error;
+      }
+      return json({ ok: true, id }, 201);
     },
   ],
 ];

@@ -61,12 +61,12 @@ def test_program_is_linked_and_mined(db):
     assert documents.process_pending(db) == {"processed": 0, "errors": 0}
 
 
-def test_research_only_never_touches_live_cards(db):
+def test_legacy_research_flag_does_not_exclude_workouts(db):
     ingest.store_card(db, _card(), "test")
     _upload(db, PROGRAM, race_date="2026-11-26", research_only=1)
     documents.process_pending(db)
-    assert db.scalar("SELECT extra FROM runners WHERE program_number='1'") is None
-    assert db.scalar("SELECT COUNT(*) FROM document_notes WHERE kind='workout'") == 3  # kept for research
+    assert len(json.loads(db.scalar("SELECT extra FROM runners WHERE program_number='1'"))["workouts"]) == 2
+    assert db.scalar("SELECT COUNT(*) FROM document_notes WHERE kind='workout'") == 3
 
 
 def test_unrelated_text_links_nothing(db):
@@ -87,3 +87,16 @@ def test_canonical_json_upload_imports_cards(db):
 def test_dates_found_in_text():
     assert documents.dates_in("Card for 11/26/2026 and November 27, 2026 (2026-11-28)") == {
         "2026-11-26", "2026-11-27", "2026-11-28"}
+
+def test_pocket_pp_waits_for_the_exact_card(db):
+    doc_id = _upload(db, "FL-11/26/2026-3\n" + PROGRAM)
+    assert documents.process_pending(db) == {"processed": 0, "errors": 0}
+    assert db.scalar("SELECT status FROM documents WHERE id=?", [doc_id]) == "waiting"
+    wrong = _card()
+    wrong["races"][0]["race_number"] = 4
+    ingest.store_card(db, wrong, "test")
+    assert documents.process_pending(db) == {"processed": 0, "errors": 0}
+    ingest.store_card(db, _card(), "test")
+    assert documents.process_pending(db) == {"processed": 1, "errors": 0}
+    summary = json.loads(db.scalar("SELECT summary FROM documents WHERE id=?", [doc_id]))
+    assert summary["races_linked"] == ["FL-20261126-3"]

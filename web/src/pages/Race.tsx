@@ -151,18 +151,6 @@ export function Race({ id }: { id: string }) {
                                     {x.factors.map((f, i) => <li key={i} className={f.startsWith("+") ? "pos" : f.startsWith("−") ? "neg" : ""}>{f}</li>)}
                                   </ul>
                                 </div>
-                                {notesFor(x.program_number).length > 0 && (
-                                  <div className="doc-notes">
-                                    <h4>From your documents</h4>
-                                    {notesFor(x.program_number).map((n) => (
-                                      <p key={n.id} className="small">
-                                        <span className="tag value">{n.kind}</span>{" "}
-                                        <span className="mono pre">{n.text}</span>
-                                        <span className="muted"> · {n.filename}</span>
-                                      </p>
-                                    ))}
-                                  </div>
-                                )}
                                 <div>
                                   <h4>Connections</h4>
                                   <p>J: {r?.jockey_name ?? "—"} · T: {r?.trainer_name ?? "—"}</p>
@@ -218,6 +206,19 @@ export function Race({ id }: { id: string }) {
             )}
           </section>
         </>
+      )}
+
+      {Boolean(data.docNotes?.length) && (
+        <section className="card doc-notes">
+          <h2>From your documents</h2>
+          {data.docNotes?.map((n) => (
+            <details key={n.id}>
+              <summary>{n.horse_name ? `#${n.program_number} ${n.horse_name} · ` : ""}{n.kind}</summary>
+              <p className="small mono pre">{n.text}</p>
+              <a className="small" href={`/api/documents/${n.document_id}/file`} target="_blank" rel="noopener">{n.filename}</a>
+            </details>
+          ))}
+        </section>
       )}
 
       {results.length > 0 && (
