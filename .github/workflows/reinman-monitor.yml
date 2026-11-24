@@ -23,6 +23,7 @@ jobs:
       D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
       RACINGAPI_USERNAME: ${{ secrets.RACINGAPI_USERNAME }}
       RACINGAPI_PASSWORD: ${{ secrets.RACINGAPI_PASSWORD }}
+      PUNTERSEDGE_API_KEY: ${{ secrets.PUNTERSEDGE_API_KEY }}
       NWS_USER_AGENT: ${{ vars.NWS_USER_AGENT || '(rein-man personal handicapping app)' }}
     steps:
       - uses: actions/checkout@v4

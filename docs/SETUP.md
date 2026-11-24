@@ -77,3 +77,43 @@ The engine can point at the local D1 file with
 | NWS weather | $0 |
 | The Racing API NA add-on | ~£49.99/month (the only recurring cost) |
 | AI API calls | $0 — all analysis text is generated deterministically |
+
+## Free U.S. racing data
+
+Create a [free PuntersEdge key](https://puntersedge.online/api) and add it as
+the GitHub Actions secret `PUNTERSEDGE_API_KEY` (or export it locally).
+Rein Man uses this feed when The Racing API credentials are absent. Remove those
+credentials if you are switching an existing installation to the free feed.
+The [personal-use license](https://puntersedge.online/terms) covers private
+models, backtests and dashboards.
+
+```bash
+reinman source-check
+reinman ingest
+reinman results --date YYYY-MM-DD
+```
+
+The scheduled jobs reserve at most 19 tote-board calls and four results pages per UTC
+day, at two credits each. That's at most 1,426 credits in a 31-day month before manual
+calls. The monitor spaces board requests at least 45 minutes apart within a UTC day,
+and the daily job settles today's and yesterday's results. Manual commands and backfills
+also use the key's allowance. The provider stops serving requests at the free plan's cap.
+
+### Import OffTrackBetting.com results and payouts
+
+Open an [OTB results page](https://www.offtrackbetting.com/results/) with a single race
+showing its official horse, win, place and show table and save the page as HTML. Supply the
+track code, date and race number shown on that page:
+
+```bash
+reinman import-otb result.html --track AQU --date YYYY-MM-DD --race 8
+reinman lock
+reinman grade
+reinman stats
+```
+
+The importer records the posted finish order, straight payoffs and supported exotic
+payouts. It checks the horse names and program numbers against the card when one exists
+and skips races already marked official. Use `--evening` for an evening card with a
+separate race numbering sequence. OTB returned HTTP 403 to the development environment,
+so its import path uses saved single-race HTML. Scheduled settlement uses PuntersEdge.
