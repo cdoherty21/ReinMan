@@ -21,8 +21,10 @@
       "migrations_dir": "migrations"
     }
   ],
-  // Every 5 minutes: lock final pre-post selections; during racing hours also
-  // dispatch the GitHub Actions "monitor" workflow (reliable clock for the Python job).
+  // Every 5 minutes: lock final pre-post selections and, when the card calls for it, start
+  // the GitHub Actions "monitor" workflow (worker/src/schedule.ts: just before posts, a
+  // warm-up before the first race, results sweeps). MONITOR_MIN_GAP_MIN spaces pre-post
+  // checks to fit the free Actions minutes of a private repository.
   "triggers": { "crons": ["*/5 * * * *"] },
   "vars": {
     // "false" = email + password login (secrets REINMAN_EMAIL, REINMAN_PASSWORD, SESSION_SECRET,
@@ -31,7 +33,7 @@
     "GITHUB_REPO": "cdoherty21/ReinMan",
     "GITHUB_WORKFLOW": "reinman-monitor.yml",
     "GITHUB_REF": "main",
-    "DISPATCH_EVERY_MIN": "60"
+    "MONITOR_MIN_GAP_MIN": "20"
   },
   "keep_vars": true,
   "observability": { "enabled": true }

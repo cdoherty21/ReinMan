@@ -6,7 +6,7 @@ import logging
 
 from .db import Database
 from .sources.tracks import track_info
-from .util import jockey_id, norm_name, now_iso, trainer_id
+from .util import jockey_id, norm_name, now_iso, parse_iso, trainer_id
 
 log = logging.getLogger("reinman.ingest")
 
@@ -81,6 +81,9 @@ def store_card(db: Database, card: dict, source: str | None = None) -> dict[str,
                 reasons.append("condition")
             if r.get("surface") and prev_race.get("surface") and r["surface"] != prev_race["surface"]:
                 reasons.append("surface")
+            if r.get("post_time") and prev_race.get("post_time") and abs(
+                    (parse_iso(r["post_time"]) - parse_iso(prev_race["post_time"])).total_seconds()) >= 180:
+                reasons.append("post_time")
         status = "cancelled" if r.get("is_cancelled") else (prev_race or {}).get("status", "scheduled")
         db.upsert_many("races", [{
             "race_id": rid, "meet_id": meet["meet_id"], "track_id": meet["track_id"],

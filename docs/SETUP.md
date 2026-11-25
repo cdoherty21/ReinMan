@@ -84,8 +84,7 @@ the live database, holding the same lock as the other data jobs. Record each run
 
 ## 4. The clock (Worker → GitHub) — required
 GitHub's own schedules are unreliable (often hours late or skipped), so the Worker's
-5-minute cron starts the jobs: the race-day monitor hourly (10am–2am ET; the free PuntersEdge budget allows a fresh board read about every 45 minutes, and a private repo has 2,000 free Actions minutes a month), a
-document scan within 5 minutes of an upload, the daily cycle at ~6:40am ET, and weekly
+5-minute cron starts the jobs: the race-day monitor when the card calls for it (`worker/src/schedule.ts`, re-read from the post times in the database on every tick, so moved posts, delays and dark days are followed): 4–14 minutes before a post, at least `MONITOR_MIN_GAP_MIN` (default 20) minutes apart to fit a private repo's 2,000 free Actions minutes; a warm-up up to 90 minutes before a session's first race; results sweeps every 30 minutes while run races lack a result; and every 3 hours (8am–10pm ET) when no races are on file. Then a document scan within 5 minutes of an upload, the daily cycle at ~6:40am ET, and weekly
 learning on Monday mornings. Each start is claimed in `job_runs`, so it happens once.
 GitHub's schedules remain as backups, and the daily/learning jobs skip themselves if they
 already ran.
@@ -118,7 +117,7 @@ The engine can point at the local D1 file with
 | Item | Cost |
 |---|---|
 | Cloudflare Workers, D1, Cron, Access | $0 (free tier: 100k requests/day, 5 GB D1) |
-| GitHub Actions | $0 for public repos; private repos get 2,000 free minutes/month. A monitor run takes ~1–2 min; ~4 runs/hour over 16 racing hours ≈ 2,000–3,800 min/month. On a private repo, raise `DISPATCH_EVERY_MIN` to 30 or use a self-hosted runner. |
+| GitHub Actions | $0 for public repos; private repos get 2,000 free minutes/month. A monitor run takes ~1–2 min; following the card it runs roughly 25–35 times on a full racing day. If minutes run short, raise the Worker variable `MONITOR_MIN_GAP_MIN` (e.g. 30). |
 | NWS weather | $0 |
 | AI API calls | $0 — all analysis text is generated deterministically |
 
@@ -139,8 +138,10 @@ reinman results --date YYYY-MM-DD
 
 The scheduled jobs reserve at most 19 tote-board calls and four results pages per UTC
 day, at two credits each. That's at most 1,426 credits in a 31-day month before manual
-calls. The monitor spaces board requests at least 45 minutes apart within a UTC day,
-and the daily job settles today's and yesterday's results. Manual commands and backfills
+calls. The monitor aims board reads just before posts (`engine/reinman/schedule.py`): a read is
+spent when races post within 2–16 minutes, at least 10 minutes after the last one; when fewer
+reads are left than post windows, they go to the busiest windows. The daily job settles
+today's and yesterday's results. Manual commands and backfills
 also use the key's allowance. The provider stops serving requests at the free plan's cap.
 
 ### Automatic OffTrackBetting.com results

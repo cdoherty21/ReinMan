@@ -1,4 +1,5 @@
 // Rein Man Worker: private API + static app + scheduled locking.
+import { etHour, monitorPlan } from "./schedule";
 import { COOKIE, checkPassword, hashPassword, makeSession, randomToken, readCookie, sameEmail, sessionCookie, sha256, verifySession } from "./auth";
 
 export interface Env {
@@ -20,7 +21,7 @@ export interface Env {
   GITHUB_REPO?: string;
   GITHUB_WORKFLOW?: string;
   GITHUB_REF?: string;
-  DISPATCH_EVERY_MIN?: string;
+  MONITOR_MIN_GAP_MIN?: string;
 }
 
 const MAX_DOC_CHARS = 1_000_000;
@@ -87,13 +88,37 @@ export async function lockDue(db: D1Database): Promise<number> {
   return r.meta.changes ?? 0;
 }
 
+/** Start the race-day monitor when the card calls for it (see schedule.ts): just before
+ *  posts, a warm-up before the first race, and results sweeps after races. Post times are
+ *  re-read on every tick, so the plan follows the card as it changes. */
 async function dispatchMonitor(env: Env, when: Date): Promise<string> {
   if (!env.GITHUB_TOKEN || !env.GITHUB_REPO) return "dispatch not configured";
-  const every = Number(env.DISPATCH_EVERY_MIN || "15");
-  const h = when.getUTCHours();
-  const racing = h >= 14 || h < 6; // ~10am–2am ET covers U.S. day and night cards
-  if (!racing || when.getUTCMinutes() % every !== 0) return "outside dispatch window";
-  return dispatchWorkflow(env, env.GITHUB_WORKFLOW || "reinman-monitor.yml");
+  const rows = await all<{ post_time: string; status: string }>(env.DB,
+    `SELECT post_time, status FROM races WHERE is_cancelled = 0 AND status != 'cancelled'
+       AND post_time BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 hours')
+                         AND strftime('%Y-%m-%dT%H:%M:%fZ','now','+24 hours')`);
+  const last = await first<{ at: string | null }>(env.DB,
+    "SELECT MAX(started_at) AS at FROM job_runs WHERE job = 'monitor_dispatch' AND status IN ('ok','running')");
+  const plan = monitorPlan(when.getTime(),
+    rows.map((r) => ({ post: Date.parse(r.post_time), official: r.status === "official" }))
+      .filter((r) => Number.isFinite(r.post)),
+    last?.at ? Date.parse(last.at) : null, etHour(when), Number(env.MONITOR_MIN_GAP_MIN || "20"));
+  if (!plan.due) return plan.reason;
+  const claim = await first<{ id: number }>(env.DB,
+    `INSERT INTO job_runs (job, status) SELECT 'monitor_dispatch', 'running' WHERE NOT EXISTS (
+       SELECT 1 FROM job_runs WHERE job = 'monitor_dispatch' AND status IN ('ok','running')
+       AND started_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-4 minutes')) RETURNING id`);
+  if (!claim) return "already started";
+  let result = "dispatch failed";
+  try {
+    result = await dispatchWorkflow(env, env.GITHUB_WORKFLOW || "reinman-monitor.yml");
+  } catch (error) {
+    console.error("Could not start the monitor", error);
+  } finally {
+    await env.DB.prepare(`UPDATE job_runs SET finished_at=${NOW_SQL}, status=?, details=? WHERE id=?`)
+      .bind(result === "dispatch 204" ? "ok" : "error", `${plan.reason}: ${result}`, claim.id).run();
+  }
+  return `${plan.reason}: ${result}`;
 }
 
 async function dispatchWorkflow(env: Env, workflow: string): Promise<string> {

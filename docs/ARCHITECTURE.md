@@ -12,7 +12,7 @@
  GitHub Actions │ (free minutes)                       External data
  ┌──────────────┴───────────────────────────┐          ┌──────────────────────────────┐
  │ Python engine `reinman`                   │◀─────────│ canonical JSON (reinman import)│
- │  monitor (every 15 min, racing hours)     │          │ NWS api.weather.gov          │
+ │  monitor (timed to today's post times)    │          │ NWS api.weather.gov          │
  │  daily (cards, results, grading, stats)   │          │ (no live feed connected)     │
  │  learn (weekly train + gate + backtest)   │          └──────────────────────────────┘
  └───────────────────────────────────────────┘

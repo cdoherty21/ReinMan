@@ -1,13 +1,13 @@
 # Rein Man: race-day monitor. Ingests cards, scratches, changes and results; re-predicts
-# changed races; locks; grades; refreshes stats. Dispatched every 15 minutes during racing
-# hours by the Worker's cron (reliable clock); the schedule below is only a fallback.
+# changed races; locks; grades; refreshes stats. Started by the Worker's 5-minute clock
+# when the card calls for it (worker/src/schedule.ts: just before posts, a warm-up before
+# the first race, results sweeps); the schedule below is only a fallback.
 name: reinman-monitor
 on:
   workflow_dispatch:
-  # Normally started every 15 minutes by the Worker's clock (GitHub's own schedule is
-  # unreliable); this hourly schedule is only a backup.
+  # Backup only, in case the Worker's clock stops (GitHub's own schedule is unreliable).
   schedule:
-    - cron: "52 14-23,0-5 * * *"
+    - cron: "52 */3 * * *"
 concurrency:
   group: reinman-db-writer
   cancel-in-progress: false

@@ -26,7 +26,7 @@ import traceback
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from . import backtest, documents, grading, ingest, news, performance, predict, train
+from . import backtest, documents, grading, ingest, news, performance, predict, schedule, train
 from .db import Database, SQLiteDatabase, connect
 from .registry import ensure_baseline
 from .sources import configured_sources, get_source
@@ -171,12 +171,15 @@ def monitor(db: Database) -> dict:
     d = today()
     sources = automatic_sources(db)
     free = any(src.name == "puntersedge" for src in sources)
-    last_board = db.scalar("SELECT MAX(started_at) FROM job_runs WHERE job='puntersedge_tote_request' "
-                           "AND started_at >= ?", [now_iso()[:10]]) if free else None
-    if free and last_board and datetime.fromisoformat(now_iso()) - datetime.fromisoformat(last_board) < timedelta(minutes=45):
-        out = {"ingest": {"changed_races": {}, "skipped": "board recently polled"}}
+    # Free board reads are aimed just before posts (schedule.board_due); other sources
+    # are read on every run.
+    read, why = schedule.board_due(db) if free else (True, "")
+    if not read:
+        out = {"ingest": {"changed_races": {}, "skipped": why}}
     else:
         out = {"ingest": job(db, "ingest", do_ingest, db, d, sources)}
+        if why:
+            out["ingest"]["board"] = why
     # PuntersEdge results wait for the daily job (4 reads a day); OTB fills in during the day.
     live = [src for src in sources if src.name != "puntersedge"] if free else sources
     out["results"] = (job(db, "results", do_results, db, d, live) if live else
