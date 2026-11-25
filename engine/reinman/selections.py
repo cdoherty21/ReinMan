@@ -95,6 +95,22 @@ def runner_factors(i: int, contrib: np.ndarray | None, evidence: dict, X: np.nda
         lines.append("• no prior starts in Rein Man's database")
     if ev.get("additional_pp_starts"):
         lines.append(f"• {ev['additional_pp_starts']} additional starts from uploaded past performances or charts")
+    if ev.get("pedigree"):
+        pedigree = ev["pedigree"]
+        lines.append("• lineage: " + ", ".join(f"{k.replace('_', ' ')} {v}" for k, v in pedigree.items()))
+    if ev.get("travel_miles") is not None:
+        lines.append(f"• {ev['travel_miles']} miles between last race venue ({ev['previous_track']}) and today's track; {ev['rest_days']} days since that start")
+    if ev.get("workouts_30d"):
+        lines.append(f"• {ev['workouts_30d']} recorded workouts in last 30 days; latest {ev['last_work_date']}")
+    if ev.get("beyer_figures"):
+        lines.append("• recent Beyer figures (latest first): " + ", ".join(map(str, ev["beyer_figures"])))
+    for person in ("trainer", "jockey"):
+        snapshot = ev.get(person + "_snapshot")
+        if snapshot:
+            lines.append(f"• {person} published season record: {snapshot['win_pct']}% wins from {snapshot['starts']} starts")
+        record = ev.get(person + "_30d")
+        if record and record["starts"]:
+            lines.append(f"• {person}: {record['wins']} wins in {record['starts']} tracked starts in last 30 days")
     return lines
 
 
@@ -187,4 +203,5 @@ def write_take(race_key, progs, names, p, odds, odds_src, order, value, dark, fa
 
 def fair_odds(p: float) -> float:
     return max(1.0 / max(p, 1e-6) - 1.0, 0.0)
+
 

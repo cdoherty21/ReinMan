@@ -307,6 +307,39 @@ const routes: [string, RegExp, Handler][] = [
   ],
   [
     "GET",
+    /^\/api\/intelligence$/,
+    async (_req, env, url) => {
+      const track = url.searchParams.get("track");
+      // Only complete official fields count toward rankings. Partial results
+      // (e.g. top-four-only) would inflate the apparent win percentage.
+      const leaders = await all(env.DB, `
+        WITH complete AS (
+          SELECT r.race_id FROM races r
+          WHERE r.status='official' AND r.race_date>=date('now','-30 days')
+            AND r.race_date<date('now') AND (? IS NULL OR r.track_id=?)
+            AND NOT EXISTS (
+              SELECT 1 FROM runners u WHERE u.race_id=r.race_id AND u.scratched=0
+              AND NOT EXISTS (SELECT 1 FROM result_finishers f
+                  WHERE f.race_id=u.race_id AND f.program_number=u.program_number)
+            )
+        )
+        SELECT ru.trainer_id AS id, MAX(ru.trainer_name) AS name, COUNT(*) AS starts,
+               SUM(CASE WHEN f.finish_position=1 THEN 1 ELSE 0 END) AS wins,
+               1.0*SUM(CASE WHEN f.finish_position=1 THEN 1 ELSE 0 END)/COUNT(*) AS win_pct
+        FROM complete c JOIN runners ru ON ru.race_id=c.race_id
+        JOIN (SELECT race_id,program_number,MIN(finish_position) AS finish_position
+              FROM result_finishers GROUP BY race_id,program_number) f
+          ON f.race_id=ru.race_id AND f.program_number=ru.program_number
+        WHERE ru.scratched=0 AND ru.trainer_id IS NOT NULL AND ru.trainer_name IS NOT NULL
+        GROUP BY ru.trainer_id HAVING COUNT(*)>=10
+        ORDER BY win_pct DESC, starts DESC, name LIMIT 10`, track, track);
+      const headlines = await all(env.DB,
+        "SELECT title,url,source,published_at FROM racing_news WHERE published_at>=datetime('now','-7 days') ORDER BY published_at DESC LIMIT 12");
+      return json({ leaders, headlines });
+    },
+  ],
+  [
+    "GET",
     /^\/api\/performance$/,
     async (_req, env, url) => {
       const track = url.searchParams.get("track");
@@ -759,3 +792,4 @@ export default {
     await env.DB.prepare("DELETE FROM login_failures WHERE at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day')").run();
   },
 } satisfies ExportedHandler<Env>;
+

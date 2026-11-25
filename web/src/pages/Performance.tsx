@@ -130,6 +130,7 @@ export function Performance() {
           {!track && s.actual_wagers && <ActualWagers summary={s.actual_wagers} />}
         </>
       )}
+      <Intelligence track={track} />
       <Models />
     </>
   );
@@ -264,6 +265,40 @@ function Models() {
               </ul>
             </>
           )}
+        </>
+      )}
+    </section>
+  );
+}
+
+
+type IntelligenceData = {
+  leaders: { id: string; name: string; starts: number; wins: number; win_pct: number }[];
+  headlines: { title: string; url: string; source: string; published_at: string }[];
+};
+
+function Intelligence({ track }: { track: string }) {
+  const { data, error } = useApi<IntelligenceData>(`/api/intelligence${track ? `?track=${encodeURIComponent(track)}` : ""}`);
+  return (
+    <section className="card">
+      <h2>Racing Intelligence</h2>
+      {error && <ErrorBox error={error} />}
+      {!data && !error && <Loading />}
+      {data && (
+        <>
+          <h3>Leading trainers · last 30 days</h3>
+          {data.leaders.length ? (
+            <div className="table-wrap"><table className="data compact">
+              <thead><tr><th>Trainer</th><th className="num">Starts</th><th className="num">Wins</th><th className="num">Win rate</th></tr></thead>
+              <tbody>{data.leaders.map((t) => (
+                <tr key={t.id}><td>{t.name}</td><td className="num">{t.starts}</td><td className="num">{t.wins}</td><td className="num">{pct(t.win_pct)}</td></tr>
+              ))}</tbody>
+            </table></div>
+          ) : <p className="muted small">Rankings appear once trainers have 10 starts in fully recorded official fields.</p>}
+          <h3>Recent racing headlines</h3>
+          {data.headlines.length ? <ul className="timeline small">
+            {data.headlines.map((n) => <li key={n.url}><a href={n.url} target="_blank" rel="noopener noreferrer">{n.title}</a> <span className="muted"> · {n.source} · {stamp(n.published_at)}</span></li>)}
+          </ul> : <p className="muted small">No recent headlines collected yet.</p>}
         </>
       )}
     </section>

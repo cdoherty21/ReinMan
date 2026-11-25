@@ -32,6 +32,7 @@ jobs:
       D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
       PUNTERSEDGE_API_KEY: ${{ secrets.PUNTERSEDGE_API_KEY }}
       FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+      REINMAN_NEWS_FEEDS: ${{ vars.REINMAN_NEWS_FEEDS }}
       OTB_DAILY_PAGES: ${{ vars.OTB_DAILY_PAGES || '60' }}
       OTB_MIN_INTERVAL_MIN: ${{ vars.OTB_MIN_INTERVAL_MIN || '60' }}
       NWS_USER_AGENT: ${{ vars.NWS_USER_AGENT || '(rein-man personal handicapping app)' }}
@@ -46,3 +47,4 @@ jobs:
       - if: steps.docs.outputs.ready != '0'
         run: (command -v pdftotext && command -v tesseract) || (sudo apt-get update && sudo apt-get install -y poppler-utils tesseract-ocr)
       - run: reinman daily ${{ inputs.force && '--force' || '' }}
+

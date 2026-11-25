@@ -256,6 +256,12 @@ def _try_canonical(db: Database, text: str) -> dict | None:
         data = json.loads(text)
     except ValueError:
         return None
+    from .research_bundle import cards_from_bundle
+    bundle = cards_from_bundle(data)
+    if bundle is not None:
+        imported, linked = _store_program_cards(db, bundle)
+        return {"canonical_import": True, "race_cards_imported": imported, "races_linked": sorted(linked),
+                "research_bundle": True, "cards": len(bundle)}
     if not isinstance(data, dict) or not ({"cards", "results"} & set(data)):
         return None
     from . import ingest
@@ -294,14 +300,23 @@ def _fill_card_gaps(db: Database, rid: str, race: dict) -> None:
                    + " WHERE race_id=?", [*updates.values(), rid])
 
     runners = {r["program_number"]: r for r in db.query(
-        "SELECT program_number, horse_name FROM runners WHERE race_id=?", [rid])}
+        "SELECT program_number, horse_name, extra FROM runners WHERE race_id=?", [rid])}
     fields = ("post_position", "weight", "ml_odds", "jockey_id", "jockey_name", "trainer_id",
               "trainer_name", "sire", "dam", "dam_sire", "equipment", "medication")
     for runner in race["runners"]:
         program = runner["program_number"]
         old = runners.get(program)
+        if program is None:
+            matching = [r for r in runners.values() if norm_name(r["horse_name"]) == norm_name(runner["horse_name"])]
+            if len(matching) == 1:
+                old = matching[0]
+                program = old["program_number"]
         if not old or norm_name(old["horse_name"]) != norm_name(runner["horse_name"]):
             continue
+        if runner.get("extra"):
+            from .ingest import _merge_extra
+            merged = _merge_extra(old, runner["extra"])
+            db.execute("UPDATE runners SET extra=? WHERE race_id=? AND program_number=?", [merged, rid, program])
         updates = {key: runner[key] for key in fields if runner.get(key) is not None}
         if updates:
             db.execute("UPDATE runners SET " + ", ".join(f"{key}=COALESCE({key},?)" for key in updates)
@@ -371,10 +386,13 @@ def _store_program_cards(db: Database, cards: list[dict]) -> tuple[list[str], se
             ]
             if len(matches) == 1:
                 rid = matches[0]["race_id"]
-        race_ids.add(rid)
         if db.scalar("SELECT EXISTS(SELECT 1 FROM runners WHERE race_id=?)", [rid]):
+            race_ids.add(rid)
             _fill_card_gaps(db, rid, race)
             continue
+        if not card.get("complete", True):
+            continue
+        race_ids.add(rid)
         store_card(db, card, "uploaded_program")
         db.execute("UPDATE races SET status='official' WHERE race_id=? AND EXISTS "
                    "(SELECT 1 FROM results WHERE race_id=?)", [rid, rid])
@@ -504,3 +522,4 @@ def process_queue(db: Database, rescan: bool = False) -> dict:
             for day, changes in sorted(future.items())
         )
     return total
+

@@ -44,3 +44,29 @@
 Rules: odds are decimal *profit* odds (5/2 → 2.5); times are UTC ISO-8601; surfaces
 `D`/`T`/`S`; distances in yards. Every field in `extra` is optional; absent fields are
 reported as unavailable, never imputed.
+
+
+### Research ZIPs
+Upload the JSON member of a Rein Man research ZIP to Documents. Race entries,
+pedigree, published recent Beyer figures and season trainer/jockey records are
+recognized. Conditional or incomplete fields enrich matching existing cards,
+but only complete verified fields can create a race. Quarter-horse cards are
+excluded. Published snapshots are timestamped at import and usable for modeling
+only if received before the verified post time. No undated figure is assigned
+a fabricated past-performance date.
+
+### Racing intelligence
+The existing monitor/daily jobs check syndicated racing-news feeds every three
+hours, storing headlines, publication times and first-seen times with source
+links. Full entity name matches appear as context on upcoming race analysis and
+are never treated as confirmed scratches, medical facts or numerical signals.
+Performance includes recent headlines and trainer rankings from complete official
+fields. The optional REINMAN_NEWS_FEEDS repository variable accepts up to four
+comma-separated HTTPS RSS URLs. A refused or unavailable feed is logged and
+does not prevent race processing.
+
+Travel is the estimated great-circle distance between the last known race venue
+and the current venue. It is not the horse's actual shipping route. Maternal
+lineage, connection changes, recent starts, workout recency and source-specific
+Beyer summaries feed the existing weekly walk-forward learning gate. Previous
+models continue to use their original feature columns until a new model qualifies.

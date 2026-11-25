@@ -288,6 +288,14 @@ class OTBResults:
             self._tracks.setdefault(code, value)
 
     def _spend(self) -> bool:
+        # The free Firecrawl plan permits 1,000 credits per month. Reserve
+        # headroom for manual requests; both index and results cost credits.
+        month = self.now().strftime("%Y-%m-01")
+        used = self.db.scalar("SELECT COUNT(*) FROM job_runs WHERE job IN (?,?) AND started_at>=?",
+                              [self.PAGE_JOB, self.INDEX_JOB, month]) or 0
+        if used >= 900:
+            log.warning("OTB monthly free-tier budget reached")
+            return False
         if self._count_today(self.PAGE_JOB) + self._count_today(self.INDEX_JOB) >= self.daily_pages:
             log.warning("OTB daily page budget (%s) reached", self.daily_pages)
             return False
@@ -362,3 +370,4 @@ class OTBResults:
                             rid, f["program_number"], f["horse_name"])
                 return False
         return True
+
