@@ -130,7 +130,7 @@ def confidence(p: np.ndarray, comps: dict, completeness: float, policy: Policy =
 
 def select(race_key: str, progs: list[str], names: list[str], p: np.ndarray, comps: dict,
            odds: np.ndarray, odds_src: list[str | None], factors: list[list[str]], wagers: list[dict],
-           completeness: float, model_kind: str, policy: Policy = POLICY) -> dict:
+           completeness: float, model_kind: str, policy: Policy = POLICY, watch: list[dict] | None = None) -> dict:
     order = list(np.argsort(-p))
     top = [progs[i] for i in order[:3]]
     q = None
@@ -161,7 +161,7 @@ def select(race_key: str, progs: list[str], names: list[str], p: np.ndarray, com
     level, score = confidence(p, comps, completeness, policy)
     decision = "play" if wagers else "pass"
     take = write_take(race_key, progs, names, p, odds, odds_src, order, value, dark, factors, wagers,
-                      level, model_kind)
+                      level, model_kind, watch or [])
     return {"top1": top[0], "top2": top[1] if len(top) > 1 else None, "top3": top[2] if len(top) > 2 else None,
             "most_likely": progs[order[0]], "value_pick": progs[value] if value is not None else None,
             "dark_horse": progs[dark] if dark is not None else None, "confidence": level,
@@ -169,7 +169,7 @@ def select(race_key: str, progs: list[str], names: list[str], p: np.ndarray, com
 
 
 def write_take(race_key, progs, names, p, odds, odds_src, order, value, dark, factors, wagers, level,
-               model_kind) -> str:
+               model_kind, watch=()) -> str:
     i0 = order[0]
     pos = [f[2:] for f in factors[i0] if f.startswith("+ ")][:2]
     why = " and ".join(pos) if pos else "the numbers simply line up best"
@@ -181,7 +181,7 @@ def write_take(race_key, progs, names, p, odds, odds_src, order, value, dark, fa
                      f"round out the top three.")
     if value is not None and value != i0:
         parts.append(f"The value lies with #{progs[value]} {names[value]}: {p[value]:.0%} by my numbers at "
-                     f"{fmt_odds(odds[value])}.")
+                     f"{fmt_odds(odds[value])}{'' if odds_src[value] == 'live' else ' (morning line)'}.")
     elif value == i0:
         parts.append("The most likely winner is also the best price on the board. That doesn't happen often.")
     else:
@@ -194,6 +194,11 @@ def write_take(race_key, progs, names, p, odds, odds_src, order, value, dark, fa
         parts.append(f"I'm playing: {kinds}. Confidence {level.lower()}.")
     else:
         parts.append(f"I'll pass on the betting here. Confidence {level.lower()}.")
+    if watch:
+        spots = "; ".join(f"#{w['selection']} {w['horse_name'] if 'horse_name' in w else ''} at "
+                          f"{fmt_odds(w['min_odds'])} or better".replace("  ", " ") for w in watch)
+        parts.append(f"Watch the tote: {spots}. I only have the morning line here, so check the board "
+                     "before post.")
     if model_kind == "market_baseline":
         parts.append("(Cold-start mode: these numbers are the market baseline until my trained model "
                      "clears out-of-sample validation.)")

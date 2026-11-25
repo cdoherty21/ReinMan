@@ -24,6 +24,7 @@ import numpy as np
 
 from .config import POLICY, Policy
 from .probability import DEFAULT_LAMBDAS, exotic_table, ordered_prob, simulate
+from .util import fmt_odds, min_tote_odds
 from .wagertypes import MIN_BASE, takeout
 
 
@@ -115,22 +116,22 @@ def race_wagers(p: np.ndarray, progs: list[str], odds: np.ndarray, odds_src: lis
     def ok(wt):
         return offered is None or wt in offered
 
-    # ---- win
+    # ---- win: only on fresh tote odds. A morning line is a handicapper's estimate, not a
+    # price anyone can bet, so value against it is reported by ``win_watch`` instead.
     cands = []
     for i in range(n):
         o = odds[i]
-        if not np.isfinite(o) or o > policy.win_max_odds or p[i] < policy.win_min_prob:
+        if odds_src[i] != "live" or not np.isfinite(o) or o > policy.win_max_odds or p[i] < policy.win_min_prob:
             continue
         ev = win_ev(p[i], o)
-        need = policy.win_min_edge_live if odds_src[i] == "live" else policy.win_min_edge_ml
-        if ev is not None and ev >= need:
+        if ev is not None and ev >= policy.win_min_edge_live:
             cands.append((ev, i))
     for ev, i in sorted(cands, reverse=True)[:2]:
         out.append({"wager_type": "WIN", "structure": "straight", "selection": progs[i], "combos": 1,
                     "base_amount": 2.0, "cost": 2.0, "est_prob": float(p[i]),
                     "est_return": round(float(p[i] * (odds[i] + 1) * 2), 2), "ev": float(ev),
                     "rationale": f"{p[i]:.0%} to win vs {1/(odds[i]+1):.0%} implied by "
-                                 f"{'tote' if odds_src[i] == 'live' else 'morning line'} odds; "
+                                 f"tote odds; "
                                  f"Kelly fraction {kelly_fraction(p[i], odds[i]):.1%}"})
     # ---- place / show from pools
     if pools and ok("PLACE"):
@@ -163,6 +164,29 @@ def race_wagers(p: np.ndarray, progs: list[str], odds: np.ndarray, odds_src: lis
             places = 2 if w["wager_type"] == "PLACE" else 3
             w["est_prob"] = float((sims[:, :places] == i).any(axis=1).mean())
     return out
+
+
+def win_watch(p: np.ndarray, progs: list[str], odds: np.ndarray, odds_src: list[str | None],
+              policy: Policy = POLICY) -> list[dict]:
+    """Win value that rests on a morning line rather than fresh tote odds. Not a bet:
+    each item names the lowest tote price at which the horse is a bet by the live rule
+    (``win_min_edge_live``), for the player to check against the board before post."""
+    cands = []
+    for i in range(len(p)):
+        o = odds[i]
+        if odds_src[i] == "live" or not np.isfinite(o) or p[i] < policy.win_min_prob:
+            continue
+        ev = win_ev(p[i], o)
+        if ev is None or ev < policy.win_min_edge_ml:
+            continue
+        need = min_tote_odds((1 + policy.win_min_edge_live) / p[i] - 1)
+        if need <= policy.win_max_odds:
+            cands.append((ev, i, need))
+    return [{"wager_type": "WIN", "selection": progs[i], "est_prob": float(p[i]), "morning_line": float(odds[i]),
+             "min_odds": need,
+             "rationale": f"{p[i]:.0%} to win: a bet only at {fmt_odds(need)} or better on the tote "
+                          f"(morning line {fmt_odds(float(odds[i]))}; tote odds were not fresh)"}
+            for ev, i, need in sorted(cands, reverse=True)[:2]]
 
 
 def multi_race_ticket(legs: list[dict], wager_type: str, track_id: str, policy: Policy = POLICY) -> dict | None:

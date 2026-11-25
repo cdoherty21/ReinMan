@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from datetime import datetime, timedelta, timezone
 from fractions import Fraction
@@ -265,6 +266,19 @@ def date_range(start: str, end: str):
     while d <= e:
         yield d.date().isoformat()
         d += timedelta(days=1)
+
+
+_TOTE_LADDER = [0.2, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.4, 1.5, 1.6, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5,
+                5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+
+
+def min_tote_odds(dec: float) -> float:
+    """Smallest standard U.S. tote price at or above ``dec`` (odds-to-1), so a "bet only at
+    this price or better" threshold is never shown below the true break point."""
+    for step in _TOTE_LADDER:
+        if step >= dec - 1e-9:
+            return step
+    return float(math.ceil(dec - 1e-9))
 
 
 def fmt_odds(dec: float | None) -> str:

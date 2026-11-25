@@ -42,7 +42,11 @@ Minimum data before any trained model is considered: 1,500 training + 2×300 val
 races (`config.Policy`). Before that, `v0-market-baseline` is champion and every Take says so.
 
 ## Wagers (Phase 6)
-* **Win:** EV = p·(odds+1) − 1; live tote odds need ≥10% edge, morning line ≥20%.
+* **Win:** EV = p·(odds+1) − 1, bet only on fresh tote odds (read within 5 minutes) with ≥10% edge.
+  Value against a morning line (≥20% edge) is not a bet: it is listed as *Watch at the tote* with
+  the lowest tote price that would clear the 10% rule, rounded up to the next standard price
+  (`wagers.win_watch`). Watch items are kept in the pick's `data_notes`, not in `wagers`, so
+  they never count in recommended-bet results. Each pick also records when the tote was last read.
 * **Place/Show:** only with per-horse pool amounts; pari-mutuel payout formula with takeout,
   $2.10 minimum, averaged over simulated finishing orders.
 * **Exacta/Trifecta/Superfecta:** combination probabilities from the finish-order model;

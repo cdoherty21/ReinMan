@@ -67,6 +67,7 @@ type Wager = {
   cost: number; est_prob: number; est_return: number | null; ev: number | null; rationale: string | null; legs: string;
   grade_status: string | null; payout: number | null;
 };
+type Watch = { selection: string; horse_name?: string; est_prob: number; morning_line: number; min_odds: number; rationale: string };
 type RaceResp = {
   race: Record<string, string | number | null>;
   lock: { prediction_id: number; locked_at: string } | null;
@@ -75,7 +76,7 @@ type RaceResp = {
     prediction_id: number; created_at: string; model_version: string; top1: string; top2: string | null; top3: string | null;
     most_likely: string; value_pick: string | null; dark_horse: string | null; confidence: string; confidence_score: number;
     decision: string; take: string; pace: { scenario: string; early_speed_count: number } | null;
-    data_notes: { unavailable: string[]; odds_basis: string } | null;
+    data_notes: { unavailable: string[]; odds_basis: string; odds_as_of?: string | null; watch?: Watch[] } | null;
   };
   picks: Pick[]; wagers: Wager[]; runners: Runner[];
   results: { program_number: string | null; horse_name: string; finish_position: number; win_payoff: number | null; place_payoff: number | null; show_payoff: number | null; dead_heat: number }[];
@@ -224,7 +225,15 @@ export function Race({ id }: { id: string }) {
               <p className="notice small">
                 Not available for this race from the current data source:{" "}
                 {p.data_notes.unavailable.map((u) => FACTOR_NAMES[u] ?? u).join(", ")}. Rein Man does not guess at missing data.
-                Odds basis: {p.data_notes.odds_basis.replace("_", " ")}.
+              </p>
+            )}
+            {p.data_notes && (
+              <p className="muted small">
+                {p.data_notes.odds_basis === "live"
+                  ? <>Priced on tote odds{p.data_notes.odds_as_of ? <> read {stamp(p.data_notes.odds_as_of)}</> : null}.</>
+                  : <>Priced on the morning line: no fresh tote odds when this pick was made
+                      {p.data_notes.odds_as_of ? <> (last tote read {stamp(p.data_notes.odds_as_of)})</> : null}.
+                      Win bets need fresh tote odds, so value here is listed under Watch at the tote.</>}
               </p>
             )}
           </section>
@@ -232,7 +241,11 @@ export function Race({ id }: { id: string }) {
           <section className="card">
             <h2>Recommended Wagers <span className="muted small">(hypothetical, tracked)</span></h2>
             {wagers.length === 0 ? (
-              <p className="muted">Pass. No wager in this race clears Rein Man's value threshold. The top three are ranked anyway.</p>
+              <p className="muted">
+                {(p.data_notes?.watch?.length ?? 0) > 0
+                  ? "No bet at the prices Rein Man could see. Check the horses below against the tote before post."
+                  : "Pass. No wager in this race clears Rein Man's value threshold. The top three are ranked anyway."}
+              </p>
             ) : (
               <div className="table-wrap">
                 <table className="data">
@@ -252,6 +265,26 @@ export function Race({ id }: { id: string }) {
                   </tbody>
                 </table>
               </div>
+            )}
+            {(p.data_notes?.watch?.length ?? 0) > 0 && (
+              <>
+                <h3>Watch at the tote <span className="muted small">(not tracked as bets)</span></h3>
+                <div className="table-wrap">
+                  <table className="data">
+                    <thead><tr><th>Horse</th><th className="num">Morning line</th><th className="num">Bet at or above</th><th className="num">Win chance</th></tr></thead>
+                    <tbody>
+                      {p.data_notes!.watch!.map((w) => (
+                        <tr key={w.selection}>
+                          <td><HorseNumber number={w.selection} /> {w.horse_name ?? ""}</td>
+                          <td className="num">{odds(w.morning_line)}</td>
+                          <td className="num pos">{odds(w.min_odds)}</td>
+                          <td className="num">{pct(w.est_prob)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </section>
         </>

@@ -17,7 +17,7 @@ from .probability import DEFAULT_LAMBDAS, summarize
 from .registry import champion
 from .selections import fair_odds, runner_factors, select
 from .util import now_iso, parse_iso, stable_hash, to_iso
-from .wagers import multi_race_ticket, race_wagers
+from .wagers import multi_race_ticket, race_wagers, win_watch
 from .wagertypes import LEGS
 
 log = logging.getLogger("reinman.predict")
@@ -82,8 +82,13 @@ def analyze_race(db: Database, h, model_version: str, model, artifact: dict, rac
     pools = _latest_pools(db, race["race_id"], progs, since)
     wagers = race_wagers(p, progs, odds, odds_src, pools, race["track_id"], race["race_id"], offered,
                          POLICY, lambdas)
+    watch = win_watch(p, progs, odds, odds_src, POLICY)
+    for w in watch:
+        w["horse_name"] = names[progs.index(w["selection"])]
+    odds_as_of = db.scalar("SELECT MAX(captured_at) FROM odds_snapshots WHERE race_id=? AND live_odds IS NOT NULL",
+                           [race["race_id"]])
     sel = select(race["race_id"], progs, names, p, comps, odds, odds_src, factors, wagers, completeness,
-                 artifact.get("kind", "?"))
+                 artifact.get("kind", "?"), watch=watch)
     q = None
     if market is not None:
         q = 1 / (market + 1)
@@ -114,7 +119,8 @@ def analyze_race(db: Database, h, model_version: str, model, artifact: dict, rac
     return {"race": race, "selection": sel, "runners": runner_rows, "wagers": wagers, "p": p, "q": q,
             "progs": progs, "pace": pace, "inputs_hash": inputs_hash,
             "data_notes": {"unavailable": unavailable, "odds_basis": "live" if market is live_odds else
-                           "morning_line" if market is not None else "none"}}
+                           "morning_line" if market is not None else "none",
+                           "odds_as_of": odds_as_of, "watch": watch}}
 
 
 def record(db: Database, model_version: str, a: dict, reason: str) -> int | None:

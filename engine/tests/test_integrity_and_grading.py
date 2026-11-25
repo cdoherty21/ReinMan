@@ -178,3 +178,22 @@ def test_drawdown_and_streak():
     seq = [("a", -2, True), ("b", -2, True), ("c", 10, False), ("d", -2, True), ("e", -2, True), ("f", -2, True)]
     mdd, streak = performance._drawdown_and_streak(seq)
     assert mdd == 6 and streak == 3
+
+
+def test_stale_tote_odds_give_a_watch_not_a_bet(db):
+    card = _card(_future(3600), runners=4, track="PRX")
+    for rn, (ml, live) in zip(card["races"][0]["runners"], [(9.0, 9.0), (1.0, 1.0), (2.0, 2.0), (3.0, 3.0)]):
+        rn.update(ml_odds=ml, live_odds=live)
+    ingest.store_card(db, card, "puntersedge")
+    db.execute("UPDATE races SET source='puntersedge'")
+    # The tote read is 20 minutes old: too stale to bet into.
+    stale = to_iso(datetime.now(timezone.utc) - timedelta(minutes=20))
+    db.execute("UPDATE runners SET updated_at=?", [stale])
+    db.execute("UPDATE odds_snapshots SET captured_at=?", [stale])
+    predict.predict_date(db, "2026-11-24")
+    row = db.one("SELECT prediction_id, decision, data_notes FROM predictions ORDER BY prediction_id DESC LIMIT 1")
+    notes = json.loads(row["data_notes"])
+    assert notes["odds_basis"] == "morning_line" and notes["odds_as_of"] == stale
+    assert not db.query("SELECT * FROM wagers WHERE prediction_id=? AND wager_type='WIN'", [row["prediction_id"]])
+    for w in notes["watch"]:
+        assert w["min_odds"] > 0 and w["horse_name"].startswith("Horse")
