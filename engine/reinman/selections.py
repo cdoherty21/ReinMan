@@ -111,6 +111,11 @@ def runner_factors(i: int, contrib: np.ndarray | None, evidence: dict, X: np.nda
                      f"• {ev['travel_miles']} miles from last race venue ({ev['previous_track']}); {days}")
     if ev.get("workouts_30d"):
         lines.append(f"• {_n(ev['workouts_30d'], 'recorded workout')} in last 30 days; latest {ev['last_work_date']}")
+    if ev.get("rm_figures"):
+        lines.append("• Rein Man speed figures from result charts (latest first): "
+                     + ", ".join(str(round(x)) for x in ev["rm_figures"]))
+    if ev.get("rm_early"):
+        lines.append("• Rein Man early-pace figures (latest first): " + ", ".join(map(str, ev["rm_early"])))
     if ev.get("beyer_figures"):
         lines.append("• recent Beyer figures (latest first): " + ", ".join(map(str, ev["beyer_figures"])))
     for person in ("trainer", "jockey"):

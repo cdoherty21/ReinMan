@@ -209,7 +209,9 @@ def parse_race(title: re.Match, body: str, track: str) -> dict | None:
                      "beaten_lengths": (0.0 if place == 1 else calls[-1][1]) if calls else None,
                      "odds": float(m["odds"]), "favorite": bool(m["fav"]),
                      "comment": comment[:120] or None, "trouble": bool(TROUBLE.search(comment)),
-                     "final_time": _seconds(fractions[2]) if fractions else None, "layout": "chart"}})
+                     "final_time": _seconds(fractions[2]) if fractions else None,
+                     "fractions": [_seconds(x) for x in fractions[1].split()] if fractions else None,
+                     "layout": "chart"}})
     if finishers[0]["win_payoff"] is None or sum(1 for f in finishers if f["win_payoff"]) != 1:
         ok = False
     result = {"race_number": number, "finishers": finishers, "payoffs": payoffs, "scratches": scratches,

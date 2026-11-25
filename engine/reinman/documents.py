@@ -266,8 +266,14 @@ def _try_canonical(db: Database, text: str) -> dict | None:
         return None
     from . import ingest
     src = data.get("source") or "upload"
-    changed = sum(len(ingest.store_card(db, c, src)) for c in data.get("cards", []))
-    official = sum(len(ingest.store_results(db, r["meet"], r["races"], src)) for r in data.get("results", []))
+    from . import quota
+    changed = official = 0
+    for c in data.get("cards", []):
+        quota.check(db)  # resumable: a deferred file stays pending and skips what is stored
+        changed += len(ingest.store_card(db, c, src))
+    for r in data.get("results", []):
+        quota.check(db)
+        official += len(ingest.store_results(db, r["meet"], r["races"], src))
     return {"canonical_import": True, "cards": len(data.get("cards", [])), "changed_races": changed,
             "official": official}
 
@@ -427,10 +433,16 @@ def ready_count(db: Database) -> int:
     return int(db.scalar(f"SELECT COUNT(*) FROM documents d WHERE {_READY}") or 0)
 
 
-def process_pending(db: Database, limit: int = 20, touched: set[str] | None = None) -> dict:
+def process_pending(db: Database, limit: int = 20, touched: set[str] | None = None,
+                    budget_started: bool = False) -> dict:
+    from . import quota
+    if not budget_started:
+        quota.start_run(db)  # documents measure their own writes against the bulk caps
     docs = db.query(f"SELECT d.* FROM documents d WHERE {_READY} ORDER BY d.id LIMIT ?", [limit])
     done = errors = 0
     for doc in docs:
+        if not quota.keep_going(db):
+            return {"processed": done, "errors": errors, "deferred": "write budget; resumes next run"}
         try:
             text = document_text(db, doc["id"])
             summary = None
@@ -499,6 +511,11 @@ def process_pending(db: Database, limit: int = 20, touched: set[str] | None = No
                 touched.update(summary.get("races_linked") or [])
                 touched.update(summary.get("race_cards_imported") or [])
             done += 1
+        except quota.Deferred as stop:
+            # Out of today's write budget: the document stays pending and resumes next
+            # run, skipping whatever it already stored.
+            log.warning("document %s deferred: %s", doc["id"], stop)
+            return {"processed": done, "errors": errors, "deferred": str(stop)}
         except Exception as e:  # noqa: BLE001 — one bad document must not stop the others
             log.exception("document %s failed", doc["id"])
             message = str(e)
@@ -521,12 +538,18 @@ def process_queue(db: Database, rescan: bool = False) -> dict:
         db.execute(f"UPDATE documents SET status='pending', processed_at=NULL, summary=NULL, error=NULL WHERE {predicate}")
     total = {"processed": 0, "errors": 0}
     touched: set[str] = set()
+    from . import quota
+    quota.start_run(db)
     while True:
-        batch = process_pending(db, touched=touched)
+        batch = process_pending(db, touched=touched, budget_started=True)
         for key in total:
             total[key] += batch[key]
-        pending = db.scalar("SELECT EXISTS(SELECT 1 FROM documents WHERE status='pending')")
-        if not pending and batch["processed"] + batch["errors"] == 0:
+        if batch.get("deferred"):
+            total["deferred"] = batch["deferred"]
+            break
+        # No progress means nothing more can be done now (also guards against looping
+        # forever on a document that is pending but not ready).
+        if batch["processed"] + batch["errors"] == 0:
             break
     total["waiting_for_cards"] = db.scalar("SELECT COUNT(*) FROM documents WHERE status='waiting'")
     if touched:

@@ -65,7 +65,11 @@ def apply(db: Database, tables: list[list], doc: dict) -> dict | None:
     if not recognized:
         return None
     db.execute(_TABLE)
-    db.insert_many("historical_winners", records.values(), verb="INSERT OR IGNORE")
+    from . import quota
+    rows = list(records.values())
+    for i in range(0, len(rows), 500):  # resumable: INSERT OR IGNORE skips what is stored
+        quota.check(db)
+        db.insert_many("historical_winners", rows[i:i + 500], verb="INSERT OR IGNORE")
     return {"historical_import": True, "winner_records": len(records), "rejected_rows": rejected,
             "message": f"Recognized {len(records):,} historical winner records ({rejected:,} rejected). "
                        "Available as historical evidence and model features."}

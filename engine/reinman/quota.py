@@ -66,10 +66,12 @@ def status(db: Database, refresh: bool = False) -> dict:
     if override:
         used, source = int(override), "override (REINMAN_QUOTA_USED)"
     else:
-        if refresh or _cache.get("day") != day or time.time() - _cache.get("at", 0) > 300:
-            _cache.update(day=day, at=time.time(), base=_measure(db, day), mark=db.rows_written)
-        base = _cache["base"]
-        used = base["rows"] + max(0, db.rows_written - _cache["mark"])
+        c = _cache.get(id(db))
+        if refresh or not c or c["db"] is not db or c["day"] != day or time.time() - c["at"] > 300:
+            c = _cache[id(db)] = {"db": db, "day": day, "at": time.time(), "base": _measure(db, day),
+                                  "mark": db.rows_written}
+        base = c["base"]
+        used = base["rows"] + max(0, db.rows_written - c["mark"])
         source = base["source"]
     pct = used / DAILY_LIMIT
     return {"date": day, "rows_written": used, "limit": DAILY_LIMIT, "pct": round(100 * pct, 1),
@@ -123,3 +125,34 @@ def guard_bulk(db: Database, what: str) -> dict | None:
     if RANK[s["level"]] >= RANK["pause_bulk"]:
         return {"deferred": what, "until": "00:00 UTC", "quota": s}
     return None
+
+
+# ---- bulk imports: resumable, never allowed to crowd out race-day writes -------------
+BULK_RUN_CAP = 20_000   # rows one run may spend on imports before handing over to the next
+SMALL_JOB = 2_000       # an ordinary upload (one program or chart) always finishes
+
+
+class Deferred(Exception):
+    """Raised inside an import when the budget says stop; the work resumes next run
+    (every import is idempotent: what is stored is skipped, what is missing is added)."""
+
+
+def start_run(db: Database) -> None:
+    db._run_start = db.rows_written  # type: ignore[attr-defined]
+
+
+def keep_going(db: Database) -> bool:
+    """Whether a bulk import may continue in this run. Small jobs always finish (unless
+    in an emergency); large ones stop at the per-run cap or once the day reaches the
+    ``defer`` level, leaving at least a third of the day's writes for live racing."""
+    spent = db.rows_written - getattr(db, "_run_start", 0)
+    if not may(db, "standard"):
+        return False
+    if spent < SMALL_JOB:
+        return True
+    return spent < BULK_RUN_CAP and may(db, "background")
+
+
+def check(db: Database) -> None:
+    if not keep_going(db):
+        raise Deferred(f"write budget: {status(db)['level']} ({status(db)['pct']}%)")

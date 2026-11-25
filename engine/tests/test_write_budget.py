@@ -158,3 +158,19 @@ def test_stats_refresh_skips_unchanged(db):
     from reinman import performance
     performance.refresh_stats(db)
     assert _writes(db, lambda: performance.refresh_stats(db)) <= 1
+
+
+def test_bulk_import_stops_at_budget_and_resumes(db, monkeypatch, tmp_path):
+    import json as _json
+    cards = [_card(_future(300 + i), track=f"T{i}") for i in range(6)]
+    path = tmp_path / "cards.json"
+    path.write_text(_json.dumps({"source": "archive", "cards": cards}))
+    monkeypatch.setattr(quota, "SMALL_JOB", 10)
+    monkeypatch.setenv("REINMAN_QUOTA_USED", "70000")  # defer level: bulk work yields to racing
+    first = cli.do_import(db, str(path))
+    assert first.get("deferred") and first["cards"] < 6
+    monkeypatch.setenv("REINMAN_QUOTA_USED", "0")  # after the 00:00 UTC reset
+    second = cli.do_import(db, str(path))
+    assert "deferred" not in second
+    assert db.scalar("SELECT COUNT(DISTINCT track_id) FROM races") == 6
+    assert db.scalar("SELECT COUNT(*) FROM runners") == 24  # nothing duplicated

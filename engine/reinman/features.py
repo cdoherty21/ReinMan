@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .db import Database
-from . import historical, horse_profiles, medication
+from . import figures as rm_figures, historical, horse_profiles, medication
 from .ingest import canonical_people
 from .util import days_between, norm_name
 from .sources.tracks import track_info
@@ -58,6 +58,8 @@ FEATURES = [
     *horse_profiles.FEATURES,
     # news_events: barn or health news about the runner seen before post (0/1)
     "news_caution",
+    # Rein Man's own speed and pace figures from result charts (figures.py)
+    *rm_figures.FEATURES,
 ]
 RACE_CONSTANT = {"field_size", "off_track", "is_turf", "is_route"}
 RICH = {f for f in FEATURES if f.startswith("pp_")}
@@ -271,7 +273,8 @@ def _with_chart_lines(program_lines: list[dict], chart_lines: list[dict]) -> lis
     for c in chart_lines:
         key = (c.get("date"), c.get("track"))
         if key in by_key:
-            for k in ("beaten_lengths", "call_lengths", "final_time", "surface", "field_size", "distance_yards", "finish", "condition"):
+            for k in ("beaten_lengths", "call_lengths", "final_time", "surface", "field_size", "distance_yards",
+                      "finish", "condition", "fractions", "rm_speed", "rm_early", "rm_late"):
                 if by_key[key].get(k) is None and c.get(k) is not None:
                     by_key[key][k] = c[k]
         else:
@@ -497,6 +500,9 @@ def featurize_race(h: HistoryBuilder, race: dict, runners: list[dict]) -> tuple[
                 f["pp_avg_speed3"] = float(np.mean(figs[:3]))
                 if len(figs) >= 3:
                     f["pp_speed_trend"] = float(figs[0] - np.mean(figs[1:3]))
+            rm, rm_ev = rm_figures.features(pps)
+            f.update(rm)
+            ev.update(rm_ev)
             calls = [p["call_positions"][0] / max(p.get("field_size") or n, 1)
                      for p in pps[:3] if p.get("call_positions") and p.get("field_size")]
             if calls:
@@ -629,8 +635,31 @@ def load_races(db: Database, start: str | None = None, end: str | None = None,
 
 
 def _chart_lines(db: Database) -> dict:
+    """Result-chart lines by horse, with Rein Man's own speed and pace figures added in
+    memory (figures.py; nothing is written). Lines stored before fractions were kept get
+    them from the race's official result."""
     from .charts import load_lines
-    return load_lines(db)
+    from .ingest import race_id_for
+    lines = load_lines(db)
+    missing = {race_id_for(ln["track"], ln["date"], ln["race_number"])
+               for group in lines.values() for ln in group
+               if not ln.get("fractions") and ln.get("track") and ln.get("date") and ln.get("race_number")}
+    fractions = {}
+    ids = sorted(missing)
+    for i in range(0, len(ids), 90):
+        chunk = ids[i:i + 90]
+        for r in db.query(f"SELECT race_id, fractions FROM results WHERE race_id IN ({','.join('?' for _ in chunk)})",
+                          chunk):
+            try:
+                fractions[r["race_id"]] = json.loads(r["fractions"]) if r["fractions"] else None
+            except ValueError:
+                pass
+    for group in lines.values():
+        for ln in group:
+            if not ln.get("fractions") and ln.get("track") and ln.get("date") and ln.get("race_number"):
+                ln["fractions"] = fractions.get(race_id_for(ln["track"], ln["date"], ln["race_number"]))
+    rm_figures.annotate(lines)
+    return lines
 
 
 def _news_caution(db: Database) -> dict:
@@ -691,8 +720,8 @@ def data_availability(X: np.ndarray) -> dict[str, bool]:
         "pedigree": any_col(["sire_surface_win", "dam_surface_win", "damsire_surface_win"]),
         "travel": any_col(["travel_miles_log"]),
         "post_bias": any_col(["post_bias"]),
-        "speed_figures": any_col(["pp_last_speed", "beyer_latest"]),
-        "pace_figures": any_col(["pp_early_pos"]),
+        "speed_figures": any_col(["pp_last_speed", "beyer_latest", "rm_speed_last"]),
+        "pace_figures": any_col(["pp_early_pos", "rm_early_avg3"]),
         "trouble_notes": any_col(["pp_last_trouble"]),
         "workouts": any_col(["pp_works_30d"]),
     }

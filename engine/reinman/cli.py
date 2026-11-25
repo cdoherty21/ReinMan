@@ -144,12 +144,24 @@ def do_results(db: Database, race_date: str, sources=None) -> dict:
 
 
 def do_import(db: Database, path: str) -> dict:
+    """Import a canonical file. Idempotent and resumable: stored races cost reads only,
+    and a run stops cleanly at the write budget (``quota.keep_going``); run it again,
+    after 00:00 UTC if need be, to continue."""
     f = CanonicalFile(path)
-    changed, official = 0, 0
-    for card in f.all_cards():
-        changed += len(ingest.store_card(db, card, f.name))
-    for r in f.all_results():
-        official += len(ingest.store_results(db, r["meet"], r["races"], f.name))
+    quota.start_run(db)
+    changed, official, cards, results = 0, 0, 0, 0
+    try:
+        for card in f.all_cards():
+            quota.check(db)
+            changed += len(ingest.store_card(db, card, f.name))
+            cards += 1
+        for r in f.all_results():
+            quota.check(db)
+            official += len(ingest.store_results(db, r["meet"], r["races"], f.name))
+            results += 1
+    except quota.Deferred as stop:
+        return {"cards": cards, "of_cards": len(f.all_cards()), "results": results, "of_results": len(f.all_results()),
+                "changed": changed, "official": official, "deferred": str(stop), "resume": "run the same import again"}
     return {"cards": len(f.all_cards()), "changed": changed, "official": official}
 
 
@@ -212,6 +224,7 @@ def source_check(race_date: str) -> dict:
 def monitor(db: Database) -> dict:
     d = today()
     started, before = now_iso(), db.rows_written
+    quota.start_run(db)
     q = quota.status(db, refresh=True)
     report_quota(q)
     sources = automatic_sources(db)
@@ -252,6 +265,7 @@ def monitor(db: Database) -> dict:
 def daily(db: Database) -> dict:
     d = today()
     out = {}
+    quota.start_run(db)
     q = quota.status(db, refresh=True)
     report_quota(q)
     sources = automatic_sources(db)
@@ -357,9 +371,14 @@ def canonicalize_people(db: Database) -> dict:
 
 
 def backfill(db: Database, start: str, end: str) -> dict:
+    """Day by day; stops cleanly at the write budget and resumes where it left off
+    (stored days cost reads only)."""
     n = 0
     sources = configured_sources()
+    quota.start_run(db)
     for d in date_range(start, end):
+        if not quota.keep_going(db):
+            return {"days": n, "deferred_from": d, "quota": quota.status(db), "resume": f"--start {d} --end {end}"}
         job(db, "backfill_cards", do_ingest, db, d, sources)
         job(db, "backfill_results", do_results, db, d, sources)
         n += 1
