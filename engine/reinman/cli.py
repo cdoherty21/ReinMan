@@ -13,6 +13,7 @@
     reinman import FILE              load a canonical JSON file (licensed data)
     reinman source-check --date D    validate the live source against adapter assumptions
     reinman canonicalize-people      one-time: rewrite stored jockey/trainer ids from names
+    reinman d1-usage                 READ-ONLY: D1 rows written today (Cloudflare-measured and per job)
 """
 from __future__ import annotations
 
@@ -300,7 +301,7 @@ def main(argv=None) -> int:
     ap.add_argument("--db", help="sqlite:///path.db or d1 (default: $REINMAN_DB)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     for c in ("init", "monitor", "lock", "grade", "stats", "backtest", "documents-ready", "news",
-              "canonicalize-people"):
+              "canonicalize-people", "d1-usage"):
         sub.add_parser(c)
     for c in ("daily", "train"):
         sub.add_parser(c).add_argument("--force", action="store_true", help="run even if it ran recently")
@@ -332,6 +333,10 @@ def main(argv=None) -> int:
         print(json.dumps(source_check(a.date or today()), indent=2, default=str))
         return 0
     db = connect(a.db)
+    if a.cmd == "d1-usage":  # READ-ONLY: writes nothing, not even a job_runs row
+        from . import usage
+        print(json.dumps(usage.report(db), indent=2, default=str))
+        return 0
     if a.cmd == "init":
         if isinstance(db, SQLiteDatabase):
             db.migrate()
