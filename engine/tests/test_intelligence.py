@@ -101,3 +101,17 @@ def test_news_defers_rate_limited_provider(db, monkeypatch):
     result = news.refresh(db)
     assert calls == ["First", "Independent"]
     assert result["feeds"]["Second"] == "rate limited"
+
+
+def test_bundle_keeps_identity_and_medication_provenance():
+    row = {"c": "CD", "n": 1, "date": "2099-11-25", "track": "Churchill Downs",
+           "breed": "thoroughbred", "starters": 2, "url": "https://example.com/entry",
+           "post": "1:00 PM ET", "metadata": {"Owners": "1 - Owner One; 2 - Owner Two",
+           "Breeders": "1 - Breeder One", "Equipment Changes": "1 - Horse One - Blinkers On"},
+           "entries": [{"horse": "Horse One", "program": "1", "medication": "L^{1}", "age_sex": "3/G"},
+                       {"horse": "Horse Two", "program": "2", "medication": ""}]}
+    runners = cards_from_bundle([row])[0]["races"][0]["runners"]
+    assert runners[0]["medication"] == "L1"
+    assert runners[0]["extra"]["horse_identity"]["owner"] == "Owner One"
+    assert runners[1]["medication"] is None
+    assert runners[1]["extra"]["medication_report"]["code"] is None

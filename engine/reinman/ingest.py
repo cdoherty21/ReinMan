@@ -5,6 +5,7 @@ import json
 import logging
 
 from .db import Database
+from .medication import normalize
 from .sources.tracks import track_info
 from .util import jockey_id, norm_name, now_iso, parse_iso, trainer_id
 
@@ -120,7 +121,7 @@ def store_card(db: Database, card: dict, source: str | None = None) -> dict[str,
                 "jockey_name": rn.get("jockey_name"), "trainer_id": rn.get("trainer_id"),
                 "trainer_name": rn.get("trainer_name"), "sire": rn.get("sire"), "dam": rn.get("dam"),
                 "dam_sire": rn.get("dam_sire"), "weight": rn.get("weight"), "equipment": rn.get("equipment"),
-                "medication": rn.get("medication"), "claiming": rn.get("claiming"), "ml_odds": rn.get("ml_odds"),
+                "medication": normalize(rn.get("medication")), "claiming": rn.get("claiming"), "ml_odds": rn.get("ml_odds"),
                 "live_odds": rn.get("live_odds"), "coupled_type": rn.get("coupled_type"),
                 "scratched": bool(rn.get("scratched")) or bool(p and p["scratched"]),
                 "extra": _merge_extra(p if p and p["horse_id"] == rn["horse_id"] else None, rn.get("extra")),
@@ -129,6 +130,8 @@ def store_card(db: Database, card: dict, source: str | None = None) -> dict[str,
                 for key in ("jockey_id", "jockey_name", "trainer_id", "trainer_name", "sire", "dam",
                             "dam_sire", "weight", "equipment", "medication", "claiming", "ml_odds", "post_position"):
                     if rows[-1][key] is None:
+                        if key == "medication" and (rn.get("extra") or {}).get("medication_report") is not None:
+                            continue
                         rows[-1][key] = p.get(key)
             if rn.get("live_odds") is not None or rn.get("win_pool") is not None:
                 snaps.append({"race_id": rid, "program_number": rn["program_number"], "captured_at": now_iso(),
@@ -180,3 +183,4 @@ def store_results(db: Database, meet: dict, results: list[dict], source: str) ->
                        [res["track_condition"], rid])
         done.append(rid)
     return done
+

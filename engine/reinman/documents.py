@@ -261,7 +261,7 @@ def _try_canonical(db: Database, text: str) -> dict | None:
     if bundle is not None:
         imported, linked = _store_program_cards(db, bundle)
         return {"canonical_import": True, "race_cards_imported": imported, "races_linked": sorted(linked),
-                "research_bundle": True, "cards": len(bundle)}
+                "research_bundle": True, "research_profile_version": 2, "cards": len(bundle)}
     if not isinstance(data, dict) or not ({"cards", "results"} & set(data)):
         return None
     from . import ingest
@@ -313,11 +313,22 @@ def _fill_card_gaps(db: Database, rid: str, race: dict) -> None:
                 program = old["program_number"]
         if not old or norm_name(old["horse_name"]) != norm_name(runner["horse_name"]):
             continue
-        if runner.get("extra"):
+        incoming = dict(runner.get("extra") or {})
+        old_extra = json.loads(old["extra"]) if old.get("extra") else {}
+        live_medication = (old_extra.get("medication_report") or {}).get("source") == "PuntersEdge"
+        if live_medication:
+            incoming.pop("medication_report", None)
+        if incoming:
             from .ingest import _merge_extra
-            merged = _merge_extra(old, runner["extra"])
+            merged = _merge_extra(old, incoming)
             db.execute("UPDATE runners SET extra=? WHERE race_id=? AND program_number=?", [merged, rid, program])
-        updates = {key: runner[key] for key in fields if runner.get(key) is not None}
+        report = incoming.get("medication_report")
+        if report is not None:
+            db.execute("UPDATE runners SET medication=? WHERE race_id=? AND program_number=?",
+                       [report.get("code"), rid, program])
+        updates = {key: runner[key] for key in fields if runner.get(key) is not None and key != "medication"}
+        if report is None and not live_medication and runner.get("medication") is not None:
+            updates["medication"] = runner["medication"]
         if updates:
             db.execute("UPDATE runners SET " + ", ".join(f"{key}=COALESCE({key},?)" for key in updates)
                        + " WHERE race_id=? AND program_number=?", [*updates.values(), rid, program])
@@ -401,7 +412,7 @@ def _store_program_cards(db: Database, cards: list[dict]) -> tuple[list[str], se
 
 
 # Documents ready to scan: new uploads, plus ones that were waiting for a race card that now exists.
-_READY = ("d.status='pending' OR (d.status='processed' "
+_READY = ("d.status='pending' OR (d.status='processed' AND json_extract(d.summary, '$.research_bundle')=1 AND COALESCE(json_extract(d.summary, '$.research_profile_version'), 0)<2) OR (d.status='processed' "
           "AND lower(d.filename) LIKE '%keeneland%csv' "
           "AND COALESCE(json_extract(d.summary, '$.historical_scan_version'), 0)=0 "
           "AND json_extract(d.summary, '$.message') LIKE 'No race card%') "
