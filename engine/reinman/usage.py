@@ -113,6 +113,10 @@ def table_activity(db: Database) -> dict:
 def report(db: Database) -> dict:
     account = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
     out = {"engine": engine_writes_today(db), "tables": table_activity(db), "cloudflare": {}}
+    try:
+        out["performance"] = performance_check(db)
+    except Exception as error:  # noqa: BLE001 — diagnostics never fail the report
+        out["performance"] = {"error": str(error)[:300]}
     for label in ("CLOUDFLARE_ANALYTICS_TOKEN", "CLOUDFLARE_API_TOKEN"):
         token = os.environ.get(label)
         if token and account:
@@ -120,3 +124,35 @@ def report(db: Database) -> dict:
             if out["cloudflare"].get("available"):
                 break
     return out
+
+
+def performance_check(db: Database, days: int = 7) -> dict:
+    """READ-ONLY: is the Performance page keeping up? Per race date: races, how many have
+    run, official results (by source), locked picks, grades; plus when the stats cache was
+    last computed and the latest grading/results job runs."""
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    per_day = db.query(
+        "SELECT r.race_date, COUNT(*) AS races, "
+        "SUM(CASE WHEN r.post_time <= ? THEN 1 ELSE 0 END) AS run, "
+        "SUM(CASE WHEN r.status='official' THEN 1 ELSE 0 END) AS official, "
+        "SUM(CASE WHEN l.race_id IS NOT NULL THEN 1 ELSE 0 END) AS locked, "
+        "SUM(CASE WHEN g.race_id IS NOT NULL THEN 1 ELSE 0 END) AS graded, "
+        "SUM(CASE WHEN l.race_id IS NOT NULL AND g.race_id IS NULL AND r.status='official' THEN 1 ELSE 0 END) "
+        "  AS locked_official_ungraded, "
+        "SUM(CASE WHEN r.post_time <= ? AND l.race_id IS NULL THEN 1 ELSE 0 END) AS run_without_lock "
+        "FROM races r LEFT JOIN locks l ON l.race_id=r.race_id LEFT JOIN grades g ON g.race_id=r.race_id "
+        "WHERE r.race_date>=? GROUP BY r.race_date ORDER BY r.race_date", [now, now, since])
+    sources = db.query("SELECT r.race_date, s.source, COUNT(*) AS n FROM results s JOIN races r ON r.race_id=s.race_id "
+                       "WHERE r.race_date>=? GROUP BY r.race_date, s.source ORDER BY r.race_date", [since])
+    grades = db.query("SELECT status, COUNT(*) AS n, MAX(graded_at) AS last FROM grades GROUP BY status")
+    cache = db.query("SELECT key, computed_at, json_extract(json,'$.picks.graded') AS graded, "
+                     "json_extract(json,'$.wagers.wagers') AS wagers FROM stats_cache ORDER BY key LIMIT 40")
+    wagers = db.query("SELECT COUNT(*) AS wagers, SUM(CASE WHEN wg.wager_id IS NOT NULL THEN 1 ELSE 0 END) AS graded "
+                      "FROM wagers w JOIN locks l ON l.prediction_id=w.prediction_id "
+                      "LEFT JOIN wager_grades wg ON wg.wager_id=w.wager_id")
+    jobs = db.query("SELECT job, started_at, status, substr(details,1,300) AS details FROM job_runs "
+                    "WHERE job IN ('results','grade','stats','daily_cycle','monitor','puntersedge_results_request',"
+                    "'otb_page_request') ORDER BY id DESC LIMIT 30")
+    return {"per_day": per_day, "result_sources": sources, "grades": grades, "stats_cache": cache,
+            "locked_wagers": wagers, "recent_jobs": jobs}
