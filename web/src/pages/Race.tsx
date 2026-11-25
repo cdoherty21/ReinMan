@@ -1,7 +1,7 @@
 import { Fragment, useState } from "react";
 import { Link } from "../main";
 import { money, odds, pct, postTime, signedPct, stamp, surfaceName, useApi, wagerLabel } from "../lib";
-import { Confidence, Decision, ErrorBox, Loading, RM } from "./common";
+import { HorseNumber, HorseSelection, Confidence, Decision, ErrorBox, Loading, RM } from "./common";
 import { distance, ordinal } from "./Today";
 
 type Pick = {
@@ -100,7 +100,7 @@ export function Race({ id }: { id: string }) {
   if (!data) return <Loading />;
   const { race, prediction: p, picks, runners, wagers, results } = data;
   const byProg = new Map(runners.map((r) => [r.program_number, r]));
-  const name = (prog: string | null) => (prog ? `#${prog} ${byProg.get(prog)?.horse_name ?? ""}` : "—");
+  const name = (prog: string | null) => (prog ? <><HorseNumber number={prog} /> {byProg.get(prog)?.horse_name ?? ""}</> : "—");
   const scratched = runners.filter((r) => r.scratched);
   const notesFor = (prog: string) => (data.docNotes ?? []).filter((n) => n.program_number === prog);
   const isLocked = data.lock && p && data.lock.prediction_id === p.prediction_id;
@@ -168,7 +168,7 @@ export function Race({ id }: { id: string }) {
                       <Fragment key={x.program_number}>
                         <tr className={`${pick ? "is-pick" : ""} ${r?.scratched ? "scratched" : ""}`} onClick={() => setOpen(isOpen ? null : x.program_number)}>
                           <td>{pick ? <RM title={`Rein Man's #${x.rank}`} /> : null} {x.rank}</td>
-                          <td className="num"><b>{x.program_number}</b></td>
+                          <td className="num"><HorseNumber number={x.program_number} /></td>
                           <td className="horse">
                             <b>{x.horse_name}</b>
                             {x.program_number === p.value_pick && <span className="tag value">Value</span>}
@@ -219,7 +219,7 @@ export function Race({ id }: { id: string }) {
                 </tbody>
               </table>
             </div>
-            {scratched.length > 0 && <p className="muted small">Scratched: {scratched.map((s) => `#${s.program_number} ${s.horse_name}`).join(", ")}</p>}
+            {scratched.length > 0 && <p className="muted small">Scratched: {scratched.map((s, i) => <Fragment key={s.program_number}>{i > 0 && ", "}<HorseNumber number={s.program_number} /> {s.horse_name}</Fragment>)}</p>}
             {p.data_notes && p.data_notes.unavailable.length > 0 && (
               <p className="notice small">
                 Not available for this race from the current data source:{" "}
@@ -241,7 +241,7 @@ export function Race({ id }: { id: string }) {
                     {wagers.map((w) => (
                       <tr key={w.wager_id}>
                         <td>{wagerLabel(w.wager_type)}{JSON.parse(w.legs).length > 1 ? <span className="muted small"> (from R{String(race.race_number)})</span> : null}</td>
-                        <td className="mono">{w.selection}</td>
+                        <td className="mono"><HorseSelection selection={w.selection} /></td>
                         <td className="num">{money(w.cost)}</td>
                         <td className="num">{pct(w.est_prob)}</td>
                         <td className="num pos">{signedPct(w.ev)}</td>
@@ -263,7 +263,7 @@ export function Race({ id }: { id: string }) {
           <table className="data">
             <thead><tr><th>Program</th><th>Horse</th><th>Jockey</th><th>Trainer</th><th>Weight</th><th>Morning line</th></tr></thead>
             <tbody>{runners.map((r) => (
-              <tr key={r.program_number}><td>{r.program_number}</td><td>{r.horse_name}</td><td>{r.jockey_name ?? "—"}</td><td>{r.trainer_name ?? "—"}</td><td>{r.weight ?? "—"}</td><td>{odds(r.ml_odds)}</td></tr>
+              <tr key={r.program_number}><td><HorseNumber number={r.program_number} /></td><td>{r.horse_name}</td><td>{r.jockey_name ?? "—"}</td><td>{r.trainer_name ?? "—"}</td><td>{r.weight ?? "—"}</td><td>{odds(r.ml_odds)}</td></tr>
             ))}</tbody>
           </table>
         </section>
@@ -274,7 +274,7 @@ export function Race({ id }: { id: string }) {
           <h2>Imported Racing Data</h2>
           {data.docNotes?.map((n) => (
             <details key={n.id}>
-              <summary>{n.horse_name ? `#${n.program_number} ${n.horse_name} · ` : ""}{n.kind}</summary>
+              <summary>{n.horse_name ? <><HorseNumber number={n.program_number} /> {n.horse_name} · </> : ""}{n.kind}</summary>
               <p className="small mono pre">{n.text}</p>
               <a className="small" href={`/api/documents/${n.document_id}/file`} target="_blank" rel="noopener">{n.filename}</a>
             </details>
@@ -298,7 +298,7 @@ export function Race({ id }: { id: string }) {
               <tbody>
                 {results.map((f, i) => (
                   <tr key={i} className={f.program_number && [p?.top1, p?.top2, p?.top3].includes(f.program_number) ? "is-pick" : ""}>
-                    <td>{f.finish_position}{f.dead_heat ? " DH" : ""}</td><td>{f.program_number ?? "—"}</td><td>{f.horse_name}</td>
+                    <td>{f.finish_position}{f.dead_heat ? " DH" : ""}</td><td><HorseNumber number={f.program_number} /></td><td>{f.horse_name}</td>
                     <td className="num">{money(f.win_payoff)}</td><td className="num">{money(f.place_payoff)}</td><td className="num">{money(f.show_payoff)}</td>
                   </tr>
                 ))}
@@ -323,7 +323,7 @@ export function Race({ id }: { id: string }) {
             {data.snapshots.map((s) => (
               <li key={s.prediction_id}>
                 <button className="linkish" onClick={() => setSnap(s.prediction_id)}>{stamp(s.created_at)}</button>
-                {" "}— {s.reason} · top pick #{s.top1} · {s.confidence} · {s.decision}
+                {" "}— {s.reason} · top pick <HorseNumber number={s.top1} /> · {s.confidence} · {s.decision}
                 {data.lock?.prediction_id === s.prediction_id && <span className="locked"> 🔒 official</span>}
               </li>
             ))}

@@ -57,3 +57,22 @@ export function ErrorBox({ error }: { error: string }) {
 export function Empty({ children }: { children: React.ReactNode }) {
   return <div className="empty">{children}</div>;
 }
+
+
+/** US saddlecloth numbers, including coupled entries such as 1A. */
+export function HorseNumber({ number }: { number: string | number | null | undefined }) {
+  if (number == null || String(number).trim() === "") return <span className="muted">—</span>;
+  const label = String(number).trim();
+  const match = /^(\d+)[A-Za-z]?$/.exec(label);
+  const cloth = match ? Number(match[1]) : 0;
+  return <span className="horse-number" data-cloth={cloth} aria-label={`Horse number ${label}`}>{label}</span>;
+}
+
+/** Color only structured program-number selections; preserve all separators. */
+export function HorseSelection({ selection }: { selection: string | null }) {
+  if (!selection) return <span className="muted">—</span>;
+  if (!/^\d+[A-Za-z]?(?:[\s,\/-]+\d+[A-Za-z]?)*$/.test(selection.trim())) return <>{selection}</>;
+  return <span className="horse-selection">{selection.trim().split(/(\d+[A-Za-z]?)/).map((part, i) =>
+    /^\d+[A-Za-z]?$/.test(part) ? <HorseNumber key={i} number={part} /> : <span key={i}>{part}</span>
+  )}</span>;
+}

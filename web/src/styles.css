@@ -395,3 +395,48 @@ table.data td a { font-weight: 550; }
   .login-card { padding: 1.5rem; }
   .bets li a { grid-template-columns: 4rem minmax(0,1fr); }
 }
+
+/* Saddlecloth-inspired number plaques. Muted racing hues, fine borders and tabular type. */
+.horse-number {
+  --cloth: #e8e3d5;
+  --number-ink: #3c493f;
+  display: inline-flex;
+  vertical-align: middle;
+  justify-content: center;
+  align-items: center;
+  min-width: 1.75rem;
+  height: 1.65rem;
+  padding: 0 .3rem;
+  border: 1px solid #0002;
+  border-radius: 5px;
+  background: var(--cloth);
+  color: var(--number-ink);
+  font: 700 .83rem/1 var(--sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-shadow: inset 0 0 0 1px #ffffff16;
+}
+.horse-number[data-cloth="1"] { --cloth: #a53837; --number-ink: #fff; }
+.horse-number[data-cloth="2"] { --cloth: #fffefa; --number-ink: #252a26; border-color: #c5c1b6; }
+.horse-number[data-cloth="3"] { --cloth: #315a99; --number-ink: #fff; }
+.horse-number[data-cloth="4"] { --cloth: #e9ca65; --number-ink: #332c17; }
+.horse-number[data-cloth="5"] { --cloth: #34754b; --number-ink: #fff; }
+.horse-number[data-cloth="6"] { --cloth: #242825; --number-ink: #f4d675; }
+.horse-number[data-cloth="7"] { --cloth: #d69a5a; --number-ink: #352716; }
+.horse-number[data-cloth="8"] { --cloth: #e1adc0; --number-ink: #422632; }
+.horse-number[data-cloth="9"] { --cloth: #81c7bd; --number-ink: #193b35; }
+.horse-number[data-cloth="10"] { --cloth: #705184; --number-ink: #fff; }
+.horse-number[data-cloth="11"] { --cloth: #d2d4d5; --number-ink: #902b2d; }
+.horse-number[data-cloth="12"] { --cloth: #bed47a; --number-ink: #2d391a; }
+.horse-number[data-cloth="13"] { --cloth: #79543c; --number-ink: #fff; }
+.horse-number[data-cloth="14"] { --cloth: #713343; --number-ink: #f5dc85; }
+.horse-number[data-cloth="15"] { --cloth: #c9b892; --number-ink: #3a3325; }
+.horse-number[data-cloth="16"] { --cloth: #b3d8e8; --number-ink: #8b4218; }
+.horse-number[data-cloth="17"] { --cloth: #283f66; --number-ink: #fff; }
+.horse-number[data-cloth="18"] { --cloth: #194a36; --number-ink: #f2d77c; }
+.horse-number[data-cloth="19"] { --cloth: #b8d7d9; --number-ink: #263e43; }
+.horse-number[data-cloth="20"] { --cloth: #984367; --number-ink: #fff; }
+.secondary-picks { display: inline-flex; gap: .25rem; margin-left: .4rem; vertical-align: middle; }
+.horse-selection { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .15rem; }
+.scratched .horse-number { opacity: .65; text-decoration: line-through; }
+@media (forced-colors: active) { .horse-number { border: 1px solid CanvasText; } }

@@ -1,6 +1,6 @@
 import { Link } from "../main";
 import { money, odds, pct, postTime, signedPct, useApi, wagerLabel } from "../lib";
-import { Confidence, DatePicker, Empty, ErrorBox, Loading, useDateParam } from "./common";
+import { HorseNumber, HorseSelection, Confidence, DatePicker, Empty, ErrorBox, Loading, useDateParam } from "./common";
 
 type W = {
   wager_id: number; race_id: string; wager_type: string; selection: string; cost: number; est_prob: number; ev: number;
@@ -51,7 +51,7 @@ export function Opportunities() {
                       <tr key={`${v.race_id}-${v.program_number}`}>
                         <td className="num">{postTime(v.post_time)}</td>
                         <td><Link to={`/race/${v.race_id}`}><b>{v.track_id}</b> R{v.race_number}</Link></td>
-                        <td>#{v.program_number} {v.horse_name} {v.is_dark_horse ? <span className="tag dark">Dark horse</span> : <span className="tag value">Value</span>}</td>
+                        <td><HorseNumber number={v.program_number} /> {v.horse_name} {v.is_dark_horse ? <span className="tag dark">Dark horse</span> : <span className="tag value">Value</span>}</td>
                         <td className="num">{pct(v.win_prob)}</td>
                         <td className="num">{odds(v.fair_odds)}</td>
                         <td className="num">{odds(v.odds_used)}{v.odds_source === "morning_line" ? <sup>ML</sup> : null}</td>
@@ -91,7 +91,7 @@ function WagerTable({ rows }: { rows: W[] }) {
               <td className="num">{postTime(w.post_time)}</td>
               <td><Link to={`/race/${w.race_id}`}><b>{w.track_id}</b> R{w.race_number}</Link></td>
               <td>{wagerLabel(w.wager_type)}</td>
-              <td className="mono">{w.selection}</td>
+              <td className="mono"><HorseSelection selection={w.selection} /></td>
               <td className="num">{money(w.cost)}</td>
               <td className="num">{pct(w.est_prob)}</td>
               <td className="num pos">{signedPct(w.ev)}</td>

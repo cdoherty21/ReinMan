@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, money, pct, signedPct, stamp, todayET, useApi, wagerLabel } from "../lib";
-import { Empty, ErrorBox, Loading } from "./common";
+import { HorseSelection, Empty, ErrorBox, Loading } from "./common";
 import { CalibrationChart, PLChart } from "./Charts";
 
 type PickM = {
@@ -194,7 +194,7 @@ function ActualWagers({ summary }: { summary: NonNullable<Stats["actual_wagers"]
         <div className="table-wrap"><table className="data compact">
           <thead><tr><th>Date</th><th>Race</th><th>Wager</th><th>Selection</th><th className="num">Amount</th><th className="num">Payout</th></tr></thead>
           <tbody>{data.rows.map((r) => (
-            <tr key={r.id}><td>{r.race_date}</td><td>{r.track_id ?? ""} {r.race_number ? `R${r.race_number}` : ""}</td><td>{wagerLabel(r.wager_type)}</td><td className="mono">{r.selection}</td><td className="num">{money(r.amount)}</td>
+            <tr key={r.id}><td>{r.race_date}</td><td>{r.track_id ?? ""} {r.race_number ? `R${r.race_number}` : ""}</td><td>{wagerLabel(r.wager_type)}</td><td className="mono"><HorseSelection selection={r.selection} /></td><td className="num">{money(r.amount)}</td>
               <td className="num">{r.payout != null ? money(r.payout) : <SettleButton id={r.id} onDone={reload} />}</td></tr>
           ))}</tbody>
         </table></div>

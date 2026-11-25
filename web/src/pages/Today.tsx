@@ -1,6 +1,6 @@
 import { Link } from "../main";
 import { postTime, shiftDate, surfaceName, useApi } from "../lib";
-import { Confidence, DatePicker, Decision, Empty, ErrorBox, Loading, RM, useDateParam } from "./common";
+import { HorseNumber, Confidence, DatePicker, Decision, Empty, ErrorBox, Loading, RM, useDateParam } from "./common";
 
 export type RaceRow = {
   race_id: string; track_id: string; track_name: string | null; race_number: number; post_time: string | null;
@@ -25,8 +25,8 @@ function PickCell({ r }: { r: RaceRow }) {
   return (
     <span className="picks">
       <RM />
-      <b>#{r.top1}</b> {r.top1_name}
-      <span className="muted"> · #{r.top2} · #{r.top3}</span>
+      <HorseNumber number={r.top1} /> {r.top1_name}
+      <span className="secondary-picks">{r.top2 && <HorseNumber number={r.top2} />}{r.top3 && <HorseNumber number={r.top3} />}</span>
     </span>
   );
 }
@@ -116,8 +116,8 @@ export function Today() {
                     <Link to={`/race/${r.race_id}`}>
                       <span className="when">{postTime(r.post_time)}</span>
                       <span className="where">{r.track_name || r.track_id} R{r.race_number}</span>
-                      <span><span className="tag value">Value</span> #{r.value_pick} {r.value_pick_name}</span>
-                      {r.dark_horse && <span><span className="tag dark">Dark horse</span> #{r.dark_horse} {r.dark_horse_name}</span>}
+                      <span><span className="tag value">Value</span> <HorseNumber number={r.value_pick} /> {r.value_pick_name}</span>
+                      {r.dark_horse && <span><span className="tag dark">Dark horse</span> <HorseNumber number={r.dark_horse} /> {r.dark_horse_name}</span>}
                     </Link>
                   </li>
                 ))}
@@ -160,7 +160,7 @@ function Outcome({ r }: { r: RaceRow }) {
   const label = f === 1 ? "Won" : f ? `Pick ${ordinal(f)}` : "No pick";
   return (
     <span>
-      <span className={`outcome ${kind}`}>{label}</span> <span className="muted small">Winner #{r.winner}</span>
+      <span className={`outcome ${kind}`}>{label}</span> <span className="muted small">Winner <HorseNumber number={r.winner} /></span>
     </span>
   );
 }

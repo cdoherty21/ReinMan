@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "../main";
 import { money, odds, shiftDate, stamp, todayET, useApi, wagerLabel } from "../lib";
-import { Confidence, Empty, ErrorBox, Loading } from "./common";
+import { HorseNumber, HorseSelection, Confidence, Empty, ErrorBox, Loading } from "./common";
 import { ordinal } from "./Today";
 
 type Row = {
@@ -62,7 +62,7 @@ function WagerBreakdown({ row, onClose }: { row: Row; onClose: () => void }) {
                     return (
                       <tr key={w.wager_id}>
                         <td>{wagerLabel(w.wager_type)}</td>
-                        <td className="mono">{w.selection}</td>
+                        <td className="mono"><HorseSelection selection={w.selection} /></td>
                         <td><span className={`res ${w.grade_status ?? ""}`}>{w.grade_status?.replace(/_/g, " ") ?? "Pending"}</span></td>
                         <td className="num">{money(w.cost)}</td>
                         <td className="num">{money(w.payout)}</td>
@@ -121,14 +121,14 @@ export function History() {
                   <tr key={r.race_id}>
                     <td>{r.race_date}</td>
                     <td><Link to={`/race/${r.race_id}`}><b>{r.track_id}</b> R{r.race_number}</Link></td>
-                    <td>#{r.top1} {r.top1_name}</td>
+                    <td><HorseNumber number={r.top1} /> {r.top1_name}</td>
                     <td className="num">{odds(r.top1_odds)}</td>
                     <td>{r.status == null ? <span className="muted">Pending</span> : r.status !== "graded" ? <span className="muted">{r.status.replace("_", " ")}</span> :
                       r.top1_finish === 1 ? <span className="hit">1st</span> : r.top1_finish ? ordinal(r.top1_finish) : "Unplaced"}</td>
                     <td className="hide-sm">{r.winner_rank ? ordinal(r.winner_rank) : "—"}</td>
                     <td><Confidence level={r.confidence} /></td>
                     <td className="num"><TopPickProfit row={r} /></td>
-                    <td>{r.wager_count === 1 && r.wager_type ? <><span>{wagerLabel(r.wager_type)} {r.wager_selection}</span><br /><span className={`res ${r.wager_status ?? ""}`}>{r.wager_status?.replace(/_/g, " ") ?? "Pending"}</span></> : r.wager_count > 1 ? <button type="button" className="linkish" onClick={() => setSelected(r)}>{r.wager_count} bets</button> : <span className="muted">Pass</span>}</td>
+                    <td>{r.wager_count === 1 && r.wager_type ? <><span>{wagerLabel(r.wager_type)} <HorseSelection selection={r.wager_selection} /></span><br /><span className={`res ${r.wager_status ?? ""}`}>{r.wager_status?.replace(/_/g, " ") ?? "Pending"}</span></> : r.wager_count > 1 ? <button type="button" className="linkish" onClick={() => setSelected(r)}>{r.wager_count} bets</button> : <span className="muted">Pass</span>}</td>
                     <td className="num">{r.wagered ? <button type="button" className="btn ghost small" onClick={() => setSelected(r)} aria-label={`View wagers for ${r.track_id} race ${r.race_number}`}><span className={r.pending_wagers > 0 ? "muted" : profitClass(r.returned - r.wagered)}>{r.pending_wagers > 0 ? "Pending" : profit(r.returned - r.wagered)} ▾</span></button> : <span className="muted">Pass</span>}</td>
                     <td className="hide-sm small muted">{stamp(r.created_at)}</td>
                   </tr>
