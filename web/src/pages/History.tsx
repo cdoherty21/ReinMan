@@ -98,7 +98,7 @@ export function History() {
       <div className="page-head">
         <div>
           <h1>History</h1>
-          <p className="muted">Top Pick P/L assumes a $2 win bet on every top pick. Recommended Bets P/L tracks only Rein Man’s suggested wagers.</p>
+          <p className="muted">Review every locked pick and result. Top Pick P/L uses a flat $2 win bet. Recommended Bets P/L uses the suggested wagers.</p>
         </div>
       </div>
       <section className="filters">

@@ -284,3 +284,114 @@ sup { font-size: 0.6rem; color: var(--ink-3); margin-left: 2px; }
 .wager-dialog::backdrop { background: rgba(16, 36, 25, 0.55); }
 .wager-dialog .card-head { justify-content: space-between; }
 .wager-dialog .card-head h2 { flex: 1; }
+
+/* The Gentleman — an elegant, consistent racing-club interface. */
+:root {
+  --green-900: #09291a;
+  --green-800: #103322;
+  --green-700: #22503a;
+  --green-600: #24683e;
+  --cream: #f7f4ed;
+  --paper: #fffefa;
+  --line: #ded8c9;
+  --charcoal: #242c26;
+  --ink-2: #465148;
+  --ink-3: #5f685f;
+  --gold: #c9a252;
+  --gold-ink: #795815;
+  --shadow: 0 2px 5px rgba(16, 51, 34, .045), 0 8px 24px rgba(16, 51, 34, .035);
+}
+body { font-size: 15.5px; line-height: 1.65; }
+h1, h2, h3, h4 { letter-spacing: -.015em; line-height: 1.25; }
+h1 { font-size: clamp(2rem, 3vw, 2.75rem); font-weight: 600; }
+h2 { font-size: 1.35rem; }
+h3 { font-size: 1.13rem; }
+.small, .mono { font-size: .875rem; }
+.muted { color: var(--ink-3); }
+.topbar { padding: .65rem clamp(1rem, 3vw, 2.5rem); background: var(--green-900); min-height: 76px; box-shadow: 0 2px 12px #09291a20; }
+.gentleman-logo { object-fit: cover; border-radius: 14%; flex-shrink: 0; }
+.brand { gap: .8rem; }
+.brand strong { font-size: 1.66rem; letter-spacing: .035em; }
+.brand em { font-size: .73rem; color: #e4c989; margin-top: .22rem; }
+.topbar nav { gap: .2rem; }
+.topbar nav a, .topbar nav .logout { font-size: .9rem; font-weight: 550; padding: .6rem .85rem; }
+.topbar nav a.active { background: #ffffff12; color: #f9e6b9; box-shadow: inset 0 -2px var(--gold); }
+.menu-btn { min-width: 44px; min-height: 44px; border-color: #dbc28565; }
+.page { max-width: 1320px; padding: 2.25rem clamp(1rem, 3vw, 2rem) 3rem; }
+.page-head { align-items: center; padding-bottom: 1.35rem; border-bottom: 1px solid var(--line); margin-bottom: 1.5rem; }
+.page-head h1 { margin-bottom: .35rem; }
+.page-head p { max-width: 70ch; }
+.card { border-radius: 13px; padding: 1.35rem 1.5rem; margin-bottom: 1.35rem; min-width: 0; }
+.card > h2, .card-head { margin-bottom: 1rem; }
+.card-head h2 { margin-bottom: 0; }
+.two-col { gap: 1.35rem; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.tiles { gap: .85rem; }
+.tile { padding: 1rem 1.15rem; border-radius: 12px; min-width: 0; }
+.tile b { font-size: 1.85rem; line-height: 1.25; margin: .25rem 0; }
+.tile span, .strip span, .chips-label, .selections > div > span { letter-spacing: .035em; text-transform: none; font-size: .85rem; }
+.tile small { font-size: .82rem; }
+.strip { border-radius: 12px; }
+.strip > div { padding: 1rem; flex-direction: column; gap: .1rem; align-items: flex-start; }
+.strip b { font-size: 1.8rem; line-height: 1.2; }
+.chip { padding: .45rem .9rem; font-weight: 550; }
+.btn, input, select { min-height: 42px; border-radius: 8px; }
+.btn.small { min-height: 34px; }
+.datepicker .btn, .datepicker input[type="date"] { height: 44px; min-width: 44px; }
+.filters label, .upload-form label, .login-card label { font-size: .85rem; font-weight: 550; }
+.seg { border-radius: 8px; max-width: 100%; }
+.seg button { padding: .55rem .85rem; min-height: 40px; }
+.table-wrap { max-width: 100%; border-radius: 8px; }
+table.data { font-size: .92rem; line-height: 1.45; }
+table.data th { font-size: .8rem; text-transform: none; letter-spacing: .015em; color: var(--green-800); background: #f1eee5; padding: .8rem .75rem; }
+table.data td { padding: .85rem .75rem; border-color: #e9e5db; }
+table.data.compact td, table.data.compact th { padding: .6rem .65rem; }
+table.data tbody tr:not(.is-pick):not(.analysis):not(.scratched):hover { background: #f5f3eb; }
+table.data td a { font-weight: 550; }
+.rm-mark { width: 1.7rem; height: 1.7rem; border-radius: 6px; overflow: hidden; margin-right: .4rem; }
+.rm-mark img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.conf, .outcome, .status, .tag { font-size: .78rem; line-height: 1.5; }
+.conf, .outcome { padding: .2rem .6rem; }
+.take { padding: 1.45rem 1.6rem; background: var(--green-900); border-radius: 13px; }
+.take h2 { margin-bottom: .65rem; color: #efd69c; }
+.take p { font-size: 1.13rem; line-height: 1.75; max-width: 95ch; }
+.selections { gap: .8rem; }
+.selections div { padding: .9rem 1rem; border-radius: 10px; }
+.bets li a { padding: .85rem .5rem; }
+.notice { padding: .85rem 1rem; background: #f7edd6; }
+.empty { padding: 1.6rem; }
+.footer-brand { display: flex; justify-content: center; align-items: center; gap: .55rem; margin-bottom: .6rem; font-family: var(--serif); color: var(--green-800); font-size: 1.15rem; }
+.foot { font-size: .8rem; border-color: var(--line); }
+.login { background: radial-gradient(ellipse at 50% 25%, #22503a, #09291a 75%); }
+.login-card { width: min(420px, 100%); padding: 2.25rem; gap: .75rem; border-radius: 16px; box-shadow: 0 20px 70px #0003; }
+.login-card h1 { font-size: 2.4rem; }
+.login-card input { min-height: 46px; }
+.login-card .btn { margin-top: .45rem; min-height: 46px; }
+.upload-form input[type="file"] { max-width: 100%; }
+@media (max-width: 1100px) { .brand em { display: none; } }
+@media (max-width: 960px) { .topbar nav a, .topbar nav .logout { min-height: 44px; padding: .7rem .85rem; } }
+@media (max-width: 860px) { .two-col { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) {
+  body { font-size: 15px; }
+  .topbar { min-height: 68px; padding: .55rem .9rem; }
+  .brand strong { font-size: 1.45rem; }
+  .brand img { width: 44px; height: 44px; }
+  .page { padding: 1.25rem .9rem 2rem; }
+  .page-head { align-items: flex-start; gap: .85rem; padding-bottom: 1rem; margin-bottom: 1rem; }
+  .page-head h1 { font-size: 2rem; }
+  .card { padding: 1rem; margin-bottom: 1rem; }
+  h2 { font-size: 1.25rem; }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+  .tile { padding: .8rem; }
+  .tile b { font-size: 1.5rem; overflow-wrap: anywhere; }
+  .strip > div { padding: .75rem; min-width: 0; }
+  .strip b { font-size: 1.55rem; }
+  .selections { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .selections div { padding: .75rem; overflow-wrap: anywhere; }
+  .take { padding: 1rem 1.15rem; }
+  .take p { font-size: 1.05rem; }
+  .datepicker { flex-wrap: wrap; max-width: 100%; }
+  table.data { font-size: .88rem; }
+  table.data td { padding: .8rem .65rem; }
+  .login-card { padding: 1.5rem; }
+  .bets li a { grid-template-columns: 4rem minmax(0,1fr); }
+}

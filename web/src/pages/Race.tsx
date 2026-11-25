@@ -133,7 +133,7 @@ export function Race({ id }: { id: string }) {
       ) : (
         <>
           <section className="take">
-            <h2><img src="/logo.svg" width={28} height={28} alt="" /> Rein Man's Take</h2>
+            <h2><img src="/gentleman-64.png" className="gentleman-logo" width={44} height={44} alt="" /> Rein Man's Take</h2>
             <p>{p.take}</p>
           </section>
           <section className="selections">
@@ -149,7 +149,7 @@ export function Race({ id }: { id: string }) {
           </section>
 
           <section className="card">
-            <h2>Rein Man's Racing Form</h2>
+            <h2>Racing Form</h2>
             <div className="table-wrap">
               <table className="data form">
                 <thead>
@@ -230,7 +230,7 @@ export function Race({ id }: { id: string }) {
           </section>
 
           <section className="card">
-            <h2>Rein Man's Wagers <span className="muted small">(hypothetical, tracked)</span></h2>
+            <h2>Recommended Wagers <span className="muted small">(hypothetical, tracked)</span></h2>
             {wagers.length === 0 ? (
               <p className="muted">Pass. No wager in this race clears Rein Man's value threshold. The top three are ranked anyway.</p>
             ) : (
@@ -271,7 +271,7 @@ export function Race({ id }: { id: string }) {
 
       {Boolean(data.docNotes?.length) && (
         <section className="card doc-notes">
-          <h2>From your documents</h2>
+          <h2>Imported Racing Data</h2>
           {data.docNotes?.map((n) => (
             <details key={n.id}>
               <summary>{n.horse_name ? `#${n.program_number} ${n.horse_name} · ` : ""}{n.kind}</summary>
@@ -284,7 +284,7 @@ export function Race({ id }: { id: string }) {
 
       {results.length > 0 && (
         <section className="card">
-          <h2>Official Result</h2>
+          <h2>Official Results</h2>
           {data.grade && (
             <p>
               Rein Man's top pick finished <b>{data.grade.top1_finish ? ordinal(data.grade.top1_finish) : "unplaced"}</b>

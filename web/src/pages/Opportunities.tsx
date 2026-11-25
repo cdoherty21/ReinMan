@@ -23,8 +23,8 @@ export function Opportunities() {
     <>
       <div className="page-head">
         <div>
-          <h1>Best Opportunities</h1>
-          <p className="muted">Where the price is wrong. Ranked by estimated edge after takeout — never forced.</p>
+          <h1>Value Opportunities</h1>
+          <p className="muted">Potential value, ranked by estimated edge after takeout.</p>
         </div>
         <DatePicker date={date} onChange={setDate} />
       </div>
@@ -35,13 +35,13 @@ export function Opportunities() {
           <section className="card">
             <h2>Rein Man's Best Bets</h2>
             {upcoming.length === 0 ? (
-              <Empty>No upcoming wager clears the value thresholds right now. Passing is a position too.</Empty>
+              <Empty>No upcoming bets meet the value thresholds.</Empty>
             ) : (
               <WagerTable rows={upcoming} />
             )}
           </section>
           <section className="card">
-            <h2>Value Contenders &amp; Dark Horses</h2>
+            <h2>Value Picks &amp; Dark Horses</h2>
             {data.value.length === 0 ? <p className="muted">None identified for this date.</p> : (
               <div className="table-wrap">
                 <table className="data">
@@ -66,7 +66,7 @@ export function Opportunities() {
           </section>
           {settled.length > 0 && (
             <section className="card">
-              <h2>Already Run</h2>
+              <h2>Earlier Races</h2>
               <WagerTable rows={settled} />
             </section>
           )}
