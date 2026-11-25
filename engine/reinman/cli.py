@@ -255,7 +255,7 @@ def monitor(db: Database) -> dict:
     out["grade"] = job(db, "grade", grading.grade_all, db, quiet=True)
     if out["results"]["official"] or out["grade"]["predictions_graded"] or stats_stale(db):
         out["stats"] = (job(db, "stats", performance.refresh_stats, db, quiet=True)
-                        if quota.may(db, "background") else deferred("stats refresh", quota.status(db)))
+                        if quota.may(db, "standard") else deferred("stats refresh", quota.status(db)))
     q = quota.status(db)
     out["quota"] = q
     _log_job(db, "monitor", started, "ok", json.dumps(out, default=str)[:4000], db.rows_written - before)
@@ -287,7 +287,7 @@ def daily(db: Database) -> dict:
     out["lock"] = job(db, "lock", predict.lock_due, db)
     out["grade"] = job(db, "grade", grading.grade_all, db)
     out["stats"] = (job(db, "stats", performance.refresh_stats, db)
-                    if quota.may(db, "background") else deferred("stats refresh", quota.status(db)))
+                    if quota.may(db, "standard") else deferred("stats refresh", quota.status(db)))
     out["quota"] = quota.status(db)
     return out
 

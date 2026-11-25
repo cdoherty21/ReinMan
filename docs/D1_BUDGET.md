@@ -63,7 +63,7 @@ reset, so results, locks and grading would stop too.
 |---|---|---|
 | normal | 0% | everything runs |
 | watch | 50% | everything runs; run summaries show the level |
-| defer | 65% | background work waits: stats cache, news polling |
+| defer | 65% | background work waits: news polling (the Performance page's stats keep refreshing; they pause only in an emergency) |
 | essential | 75% | far-from-post odds are kept only on 25% moves, and predictions more than 90 minutes from post are not re-stored |
 | pause_bulk | 85% | imports, backfills, maintenance, training and backtests refuse to start; the monitor run fails on purpose so GitHub emails an alert |
 | emergency | 90% | only results, locks, grading, near-post odds and picks within 30 minutes of post are written |
@@ -76,7 +76,7 @@ Never stopped at any level:
 * first snapshots of races.
 
 **Deferred work** is re-derived on the next run, not queued:
-* a stale stats cache is refreshed when `grades` is newer than it;
+* a stats cache paused in an emergency is refreshed once `grades` is newer than it;
 * documents stay `pending`;
 * news is polled when its 3-hour window allows.
 

@@ -7,7 +7,7 @@ Cloudflare's free tier allows 100,000 rows written per day, account-wide, reset 
     level      from   behaviour
     normal       0%   everything runs
     watch       50%   everything runs; the run summary flags the level
-    defer       65%   background work waits (stats cache refresh, weather, news polling)
+    defer       65%   background work waits (news polling); the Performance stats keep refreshing
     essential   75%   far-from-post odds kept only on large moves; predictions far from
                       post only on a change of pick
     pause_bulk  85%   bulk imports, backfills, maintenance and training refuse to start

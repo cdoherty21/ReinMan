@@ -174,3 +174,17 @@ def test_bulk_import_stops_at_budget_and_resumes(db, monkeypatch, tmp_path):
     assert "deferred" not in second
     assert db.scalar("SELECT COUNT(DISTINCT track_id) FROM races") == 6
     assert db.scalar("SELECT COUNT(*) FROM runners") == 24  # nothing duplicated
+
+
+def test_performance_page_keeps_refreshing_under_budget_pressure(db, monkeypatch):
+    # The stats cache is what the Performance page shows; it costs a handful of rows and
+    # must keep up with grading at every level short of an emergency.
+    from reinman import performance
+    monkeypatch.setenv("REINMAN_QUOTA_USED", "86000")  # pause_bulk
+    monkeypatch.setattr(cli, "today", lambda: "2026-11-24")
+    monkeypatch.setattr(cli, "automatic_sources", lambda db: [])
+    db.execute("INSERT INTO stats_cache (key, json, computed_at) VALUES ('overall', '{}', '2026-01-01T00:00:00Z')")
+    db.execute("INSERT INTO grades (race_id, prediction_id, status, graded_at) VALUES ('X-1', 1, 'graded', '2026-11-24T20:00:00Z')")
+    out = cli.monitor(db)
+    assert "deferred" not in out.get("stats", {}), out.get("stats")
+    assert db.scalar("SELECT computed_at FROM stats_cache WHERE key='overall'") > "2026-11-24"
