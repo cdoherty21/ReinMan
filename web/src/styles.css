@@ -539,3 +539,17 @@ table.data td a { font-weight: 550; }
 .tag.rumour { background: #fbe9d0; color: #8a4b0f; }
 .tag.confirmed { background: #dcefe3; color: var(--green-800); }
 .tag.caution { background: #f5dede; color: var(--red); }
+
+/* ---------- Web Interface Guidelines (vercel-labs/web-interface-guidelines) ---------- */
+.skip-link { position: absolute; left: 0.75rem; top: -3rem; z-index: 100; background: var(--charcoal); color: var(--cream);
+  padding: 0.5rem 0.9rem; border-radius: 6px; text-decoration: none; }
+.skip-link:focus-visible { top: 0.75rem; }
+main.page:focus { outline: none; }
+main.page:focus-visible { outline: 2px solid var(--gold); outline-offset: 4px; }
+h1, h2, h3 { text-wrap: balance; }
+a, button, select, input, label, summary { touch-action: manipulation; }
+:target, h2[id], h3[id] { scroll-margin-top: 5rem; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}

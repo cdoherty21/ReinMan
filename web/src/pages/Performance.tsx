@@ -186,11 +186,11 @@ function ActualWagers({ summary }: { summary: NonNullable<Stats["actual_wagers"]
         <select value={f.wager_type} onChange={(e) => setF({ ...f, wager_type: e.target.value })} aria-label="Wager type">
           {["WIN", "PLACE", "SHOW", "EXACTA", "TRIFECTA", "SUPERFECTA", "DAILY_DOUBLE", "PICK3", "PICK4", "PICK5", "PICK6"].map((w) => <option key={w} value={w}>{wagerLabel(w)}</option>)}
         </select>
-        <input placeholder="Selection (e.g. 3-5)" value={f.selection} onChange={(e) => setF({ ...f, selection: e.target.value })} aria-label="Selection" />
+        <input placeholder="Selection, e.g. 3-5…" value={f.selection} onChange={(e) => setF({ ...f, selection: e.target.value })} aria-label="Selection" />
         <input placeholder="Amount $" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} size={6} inputMode="decimal" aria-label="Amount" />
         <button className="btn primary">Record</button>
       </form>
-      {err && <p className="error">{err}</p>}
+      {err && <p className="error" role="alert">{err}</p>}
       {data && data.rows.length > 0 && (
         <div className="table-wrap"><table className="data compact">
           <thead><tr><th>Date</th><th>Race</th><th>Wager</th><th>Selection</th><th className="num">Amount</th><th className="num">Payout</th></tr></thead>

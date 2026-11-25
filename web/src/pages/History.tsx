@@ -104,7 +104,7 @@ export function History() {
       <section className="filters">
         <label>From <input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPage(0); }} /></label>
         <label>To <input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPage(0); }} /></label>
-        <label>Track <input value={track} placeholder="e.g. AQU" maxLength={5} onChange={(e) => { setTrack(e.target.value); setPage(0); }} /></label>
+        <label>Track <input value={track} placeholder="e.g. AQU…" maxLength={5} onChange={(e) => { setTrack(e.target.value); setPage(0); }} /></label>
       </section>
       {error && <ErrorBox error={error} />}
       {!data && !error && <Loading />}

@@ -1,14 +1,18 @@
-import { StrictMode, useEffect, useState } from "react";
+import { lazy, StrictMode, Suspense, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { api, navigate, useLocation } from "./lib";
 import { Today } from "./pages/Today";
-import { RaceCards } from "./pages/RaceCards";
-import { Race } from "./pages/Race";
-import { Opportunities } from "./pages/Opportunities";
-import { Performance } from "./pages/Performance";
-import { History } from "./pages/History";
-import { Documents } from "./pages/Documents";
+import { Loading } from "./pages/common";
+
+// Today loads with the app; every other page is fetched when first opened
+// (Vercel rules bundle-dynamic-imports / bundle-conditional), so phones download less up front.
+const RaceCards = lazy(() => import("./pages/RaceCards").then((m) => ({ default: m.RaceCards })));
+const Race = lazy(() => import("./pages/Race").then((m) => ({ default: m.Race })));
+const Opportunities = lazy(() => import("./pages/Opportunities").then((m) => ({ default: m.Opportunities })));
+const Performance = lazy(() => import("./pages/Performance").then((m) => ({ default: m.Performance })));
+const History = lazy(() => import("./pages/History").then((m) => ({ default: m.History })));
+const Documents = lazy(() => import("./pages/Documents").then((m) => ({ default: m.Documents })));
 
 const NAV = [
   ["/", "Today"],
@@ -151,6 +155,7 @@ function Shell({ authRequired }: { authRequired: boolean }) {
   const active = (to: string) => (to === "/" ? path === "/" : path.startsWith(to) || (to === "/cards" && !!raceMatch));
   return (
     <>
+      <a className="skip-link" href="#main">Skip to main content</a>
       <header className="topbar">
         <Link to="/" className="brand">
           <Logo size={52} />
@@ -179,7 +184,7 @@ function Shell({ authRequired }: { authRequired: boolean }) {
           </button>}
         </nav>
       </header>
-      <main className="page">{page}</main>
+      <main className="page" id="main" tabIndex={-1}><Suspense fallback={<Loading />}>{page}</Suspense></main>
       <footer className="foot">
         <div className="footer-brand"><Logo size={34} /><strong>Rein Man</strong></div>
         Selections are recorded before post time and graded against official results. Historical results cannot predict future returns.

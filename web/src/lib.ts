@@ -15,16 +15,43 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+// Responses are cached per path (stale-while-revalidate, Vercel rule client-swr-dedup):
+// going back to a page shows what it last showed at once, then refreshes; identical
+// requests in flight are shared. A page never shows another path's data while loading.
+const cache = new Map<string, unknown>();
+const inflight = new Map<string, Promise<unknown>>();
+const CACHE_MAX = 60;
+
+function fetchShared<T>(path: string): Promise<T> {
+  let p = inflight.get(path) as Promise<T> | undefined;
+  if (!p) {
+    p = api<T>(path).then((d) => {
+      cache.delete(path);
+      cache.set(path, d);
+      if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value as string);
+      return d;
+    });
+    p.finally(() => inflight.delete(path)).catch(() => {});
+    inflight.set(path, p);
+  }
+  return p;
+}
+
 export function useApi<T>(path: string | null) {
-  const [data, setData] = useState<T | null>(null);
+  const [state, setState] = useState<{ path: string | null; data: T | null }>(() => ({
+    path, data: path ? ((cache.get(path) as T | undefined) ?? null) : null,
+  }));
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  // Derived during render: a new path starts from its own cache entry, never the old page's data.
+  const data = state.path === path ? state.data : path ? ((cache.get(path) as T | undefined) ?? null) : null;
   useEffect(() => {
     if (!path) return;
     let live = true;
     setError(null);
-    api<T>(path)
-      .then((d) => live && setData(d))
+    if (tick) inflight.delete(path); // an explicit reload always refetches
+    fetchShared<T>(path)
+      .then((d) => live && setState({ path, data: d }))
       .catch((e) => {
         if (e instanceof Unauthorized) window.dispatchEvent(new Event("reinman:logout"));
         else if (live) setError(String(e.message || e));

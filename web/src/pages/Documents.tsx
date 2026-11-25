@@ -121,12 +121,12 @@ export function Documents() {
           <input type="file" multiple accept=".zip,.pdf,.html,.htm,.txt,.csv,.tsv,.json,.docx,.xlsx,.png,.jpg,.jpeg,.webp,.tif,.tiff,image/*,application/pdf,text/*"
             onChange={(e) => setFiles(Array.from(e.target.files ?? []))} aria-label="Choose documents" />
           <label>Race date (optional) <input type="date" value={raceDate} max={undefined} onChange={(e) => setRaceDate(e.target.value)} /></label>
-          <label>Track code (optional) <input value={track} placeholder="e.g. FL" maxLength={8} size={6} onChange={(e) => setTrack(e.target.value)} /></label>
+          <label>Track code (optional) <input value={track} placeholder="e.g. FL…" maxLength={8} size={6} onChange={(e) => setTrack(e.target.value)} /></label>
           <button className="btn primary" disabled={busy || files.length === 0} onClick={upload}>
             {busy ? "Reading…" : `Upload ${files.length || ""} ${files.length === 1 ? "file" : "files"}`}
           </button>
         </div>
-        {log.length > 0 && <ul className="timeline small">{log.map((l, i) => <li key={i}>{l}</li>)}</ul>}
+        <div aria-live="polite">{log.length > 0 && <ul className="timeline small">{log.map((l, i) => <li key={i}>{l}</li>)}</ul>}</div>
         {raceDate && raceDate > todayET() && <p className="small muted">Uploading ahead of race day is ideal: workouts reach the picks before post.</p>}
       </section>
 

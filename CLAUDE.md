@@ -42,3 +42,12 @@ In short:
 * **Never delete historical data** (results, predictions, odds history, news). Predictions
   and locks are append-only and enforced by triggers.
 * **Point-in-time features:** nothing dated on or after a race may feed its prediction.
+
+## Skills in this repository
+
+`.claude/skills` holds skills installed with Vercel's `skills` tool (sources pinned in
+`skills-lock.json`):
+* `vercel-react-best-practices` and `web-design-guidelines`: apply them to `web/`;
+* `webapp-testing`: Playwright checks of the running app;
+* `systematic-debugging`, `test-driven-development`, `verification-before-completion`
+  and `writing-plans`: working habits.
