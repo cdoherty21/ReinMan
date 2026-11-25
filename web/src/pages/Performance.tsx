@@ -82,7 +82,7 @@ export function Performance() {
           <div className="two-col">
             <section className="card">
               <h2>Market Benchmarks</h2>
-              <table className="data compact">
+              <div className="table-wrap"><table className="data compact">
                 <tbody>
                   <tr><td>Rein Man top pick wins</td><td className="num">{pct(s.benchmarks.model_top_pick_win_pct)}</td></tr>
                   <tr><td>Morning-line favorite wins</td><td className="num">{pct(s.benchmarks.ml_favorite_win_pct)}</td></tr>
@@ -91,7 +91,7 @@ export function Performance() {
                   <tr><td>Log-loss: market-implied</td><td className="num">{s.benchmarks.market_log_loss?.toFixed(4) ?? "—"}</td></tr>
                   <tr><td>Log-loss: random (uniform)</td><td className="num">{s.benchmarks.uniform_log_loss?.toFixed(4) ?? "—"}</td></tr>
                 </tbody>
-              </table>
+              </table></div>
               <p className="muted small">Lower log-loss is better. Beating the market-implied line is the bar that matters.</p>
               {s.drift && <p className="small">Model health: <b>{s.drift.status}</b>{s.drift.recent_log_loss ? ` (recent ${s.drift.recent_log_loss.toFixed(3)} vs prior ${s.drift.prior_log_loss?.toFixed(3)})` : ""}</p>}
             </section>
@@ -103,14 +103,14 @@ export function Performance() {
 
           <section className="card">
             <h2>Selection Ranking</h2>
-            <table className="data compact">
+            <div className="table-wrap"><table className="data compact">
               <thead><tr><th>Rein Man's rank</th><th className="num">Races</th><th className="num">Won</th><th className="num">In the money</th></tr></thead>
               <tbody>
                 {Object.entries(s.selection_ranking).map(([k, v]) => (
                   <tr key={k}><td>{k.replace("rank_", "#")}</td><td className="num">{v.n}</td><td className="num">{pct(v.win_pct)}</td><td className="num">{pct(v.itm_pct)}</td></tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </section>
 
           <section className="card">

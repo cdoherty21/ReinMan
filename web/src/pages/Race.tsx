@@ -109,7 +109,7 @@ export function Race({ id }: { id: string }) {
       <div className="page-head">
         <div>
           <p className="crumb"><Link to={`/cards?date=${race.race_date}&track=${race.track_id}`}>{String(race.track_name || race.track_id)}</Link> · {String(race.race_date)}</p>
-          <h1>Race {String(race.race_number)} <span className="muted">· {postTime(race.post_time as string)}</span></h1>
+          <h1>Race {String(race.race_number)}{race.post_time ? <span className="muted"> · {postTime(race.post_time as string)}</span> : null}</h1>
           <p className="muted">
             {distance({ distance_desc: race.distance_desc as string, distance_yards: race.distance_yards as number })} ·{" "}
             {surfaceName(race.surface as string)} · {String(race.race_class || race.race_type || "—")}
@@ -260,12 +260,30 @@ export function Race({ id }: { id: string }) {
       {!p && runners.length > 0 && (
         <section className="card">
           <h2>Entries</h2>
-          <table className="data">
-            <thead><tr><th>Program</th><th>Horse</th><th>Jockey</th><th>Trainer</th><th>Weight</th><th>Morning line</th></tr></thead>
-            <tbody>{runners.map((r) => (
-              <tr key={r.program_number}><td><HorseNumber number={r.program_number} /></td><td>{r.horse_name}</td><td>{r.jockey_name ?? "—"}</td><td>{r.trainer_name ?? "—"}</td><td>{r.weight ?? "—"}</td><td>{odds(r.ml_odds)}</td></tr>
-            ))}</tbody>
-          </table>
+          <div className="table-wrap entries-desktop">
+            <table className="data">
+              <thead><tr><th>Program</th><th>Horse</th><th>Jockey</th><th>Trainer</th><th>Weight</th><th>Morning line</th></tr></thead>
+              <tbody>{runners.map((r) => (
+                <tr key={r.program_number} className={r.scratched ? "scratched" : ""}><td><HorseNumber number={r.program_number} /></td><td>{r.horse_name}</td><td>{r.jockey_name ?? "—"}</td><td>{r.trainer_name ?? "—"}</td><td>{r.weight ?? "—"}</td><td>{odds(r.ml_odds)}</td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+          <ul className="entries-mobile">
+            {runners.map((r) => (
+              <li key={r.program_number} className={r.scratched ? "scratched" : ""}>
+                <HorseNumber number={r.program_number} />
+                <div className="entry-info">
+                  <strong>{r.horse_name}</strong>
+                  <dl className="entry-connections">
+                    <div><dt>Jockey</dt><dd>{r.jockey_name ?? "—"}</dd></div>
+                    <div><dt>Trainer</dt><dd>{r.trainer_name ?? "—"}</dd></div>
+                    {r.weight != null && <div><dt>Weight</dt><dd>{r.weight} lb</dd></div>}
+                  </dl>
+                </div>
+                <div className="entry-price"><strong>{odds(r.ml_odds)}</strong><small>ML</small></div>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 
