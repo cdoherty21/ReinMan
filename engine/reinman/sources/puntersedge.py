@@ -11,7 +11,7 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from ..util import norm_name, parse_iso, parse_odds, parse_post_time, surface_code, to_float
+from ..util import jockey_id, norm_name, parse_iso, parse_odds, parse_post_time, surface_code, to_float, trainer_id
 from ..wagertypes import normalize_wager_type
 from .tracks import canonical_track_code
 
@@ -72,8 +72,8 @@ def board_race(row: dict, race_date: str, now: datetime) -> dict | None:
             jockey, trainer = horse.get("jockey"), horse.get("trainer")
             runners.append({
                 "program_number": program, "horse_id": f"name:{norm_name(name)}", "horse_name": name,
-                "jockey_id": f"jn:{norm_name(jockey)}" if jockey else None, "jockey_name": jockey,
-                "trainer_id": f"tn:{norm_name(trainer)}" if trainer else None, "trainer_name": trainer,
+                "jockey_id": jockey_id(jockey), "jockey_name": jockey,
+                "trainer_id": trainer_id(trainer), "trainer_name": trainer,
                 "post_position": horse.get("post_position"), "weight": horse.get("weight_lb"),
                 "medication": horse.get("medication"), "sire": horse.get("sire"),
                 "dam": horse.get("dam"), "dam_sire": horse.get("dam_sire"), "scratched": scratched,

@@ -4,7 +4,7 @@ from datetime import datetime
 import re
 
 from .sources.tracks import canonical_track_code, track_info
-from .util import norm_name, parse_distance_yards, parse_odds, parse_post_time, surface_code, to_float, to_int
+from .util import jockey_id, norm_name, parse_distance_yards, parse_odds, parse_post_time, surface_code, to_float, to_int, trainer_id
 
 _ALIASES = {
     "horse": ("horse", "horsename", "runner", "runnername"),
@@ -89,8 +89,8 @@ def table_cards(tables: list[list], hints: dict) -> list[dict]:
         race["runners"] = [
             {"program_number": program, "horse_name": name, "horse_id": f"name:{norm_name(name)}",
              "post_position": to_int(row.get("post")), "weight": to_float(row.get("weight")),
-             "jockey_id": f"jn:{norm_name(row['jockey'])}" if row.get("jockey") else None,
-             "trainer_id": f"tn:{norm_name(row['trainer'])}" if row.get("trainer") else None,
+             "jockey_id": jockey_id(row.get("jockey")),
+             "trainer_id": trainer_id(row.get("trainer")),
              "ml_odds": parse_odds(row.get("odds")),
              **{field: row.get(key) or None for key, field in (
                  ("jockey", "jockey_name"), ("trainer", "trainer_name"), ("sire", "sire"),

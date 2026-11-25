@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .db import Database
+from .ingest import canonical_people
 from .util import days_between, norm_name
 from .sources.tracks import track_info
 
@@ -171,6 +172,7 @@ class HistoryBuilder:
             if pos is None:
                 continue
             won, itm = pos == 1, pos <= 3
+            r = canonical_people(r)
             prev = self.starts[r["horse_id"]][-1] if self.starts[r["horse_id"]] else None
             self.starts[r["horse_id"]].append(Start(
                 d, trk, surf, yards, off, fs, won, itm, race.get("purse"), r.get("claiming") or race.get("max_claim"),
@@ -289,6 +291,7 @@ def featurize_race(h: HistoryBuilder, race: dict, runners: list[dict]) -> tuple[
     rows, evidence = [], []
     early_positions = []
     for i, r in enumerate(live):
+        r = canonical_people(r)
         f = dict.fromkeys(FEATURES, NAN)
         ev: dict = {}
         f["ml_logp"] = math.log(mlp[i])

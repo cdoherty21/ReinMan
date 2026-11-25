@@ -6,11 +6,21 @@ import logging
 
 from .db import Database
 from .sources.tracks import track_info
-from .util import norm_name, now_iso
+from .util import jockey_id, norm_name, now_iso, trainer_id
 
 log = logging.getLogger("reinman.ingest")
 
 ODDS_MOVE = 0.35  # relative change in implied win probability that triggers an update
+
+
+def canonical_people(runner: dict) -> dict:
+    """Jockey and trainer ids derived from their names (``util.person_key``), so the
+    same person gets one id whichever source or spelling the card came from."""
+    out = dict(runner)
+    for role, make in (("jockey", jockey_id), ("trainer", trainer_id)):
+        if out.get(f"{role}_name"):
+            out[f"{role}_id"] = make(out[f"{role}_name"])
+    return out
 
 
 def race_id_for(track_id: str, race_date: str, race_number: int, day_evening: str = "D") -> str:
@@ -86,11 +96,13 @@ def store_card(db: Database, card: dict, source: str | None = None) -> dict[str,
             "updated_at": now_iso()}], key=["race_id"])
         rows, snaps = [], []
         for rn in r["runners"]:
+            rn = canonical_people(rn)
             p = prev_runners.get(rn["program_number"])
             if p is not None:
                 if rn.get("scratched") and not p["scratched"]:
                     reasons.append("scratch")
-                if rn.get("jockey_id") and p.get("jockey_id") and rn["jockey_id"] != p["jockey_id"]:
+                # Compare people, not spellings: sources write the same rider differently.
+                if rn.get("jockey_id") and canonical_people(p).get("jockey_id") not in (None, rn["jockey_id"]):
                     reasons.append("jockey")
                 lo, po = rn.get("live_odds"), p.get("live_odds")
                 if lo is not None and po is not None:

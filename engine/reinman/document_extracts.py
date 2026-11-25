@@ -6,7 +6,7 @@ import re
 from datetime import date
 
 from .sources.tracks import canonical_track_code
-from .util import norm_name, parse_distance_yards, parse_odds, parse_post_time, surface_code, to_int
+from .util import jockey_id, norm_name, parse_distance_yards, parse_odds, parse_post_time, surface_code, to_int, trainer_id
 
 _TITLE = re.compile(r"^([^|\n]+)\s*\|\s*(\d{4}-\d{2}-\d{2})\s*$", re.M)
 _PARTIAL = re.compile(r"^STATUS:\s*PARTIAL EXTRACT ONLY\b", re.M | re.I)
@@ -91,8 +91,8 @@ def partial_extract(text: str) -> tuple[str, str, dict[int, dict]] | None:
         if horse:
             current["runners"].append({
                 "program_number": program.upper(), "horse_name": horse, "jockey_name": jockey or None,
-                "jockey_id": f"jn:{norm_name(jockey)}" if jockey else None,
-                "trainer_name": trainer or None, "trainer_id": f"tn:{norm_name(trainer)}" if trainer else None,
+                "jockey_id": jockey_id(jockey),
+                "trainer_name": trainer or None, "trainer_id": trainer_id(trainer),
                 "ml_odds": parse_odds(odds), "beyer_text": figures, "source_line": line,
             })
     return track, day, races

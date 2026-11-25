@@ -7,7 +7,7 @@ import subprocess
 from collections import defaultdict
 
 from .sources.tracks import track_info
-from .util import norm_name, parse_distance_yards, parse_odds, parse_post_time, to_int
+from .util import jockey_id, norm_name, parse_distance_yards, parse_odds, parse_post_time, to_int, trainer_id
 
 _POCKET_ID = re.compile(r"^\s*([A-Z0-9]{1,8})-(\d{1,2}/\d{1,2}/20\d{2})-(\d{1,2})\s*$", re.M)
 _POCKET_RUNNER = re.compile(r"^ {1,5}(\d{1,2}[A-Z]?)(?= |$)", re.M)
@@ -133,10 +133,10 @@ def program_cards(text: str) -> list[dict]:
                 jockey = re.search(r"\)\s+[\d.]+%\s{2,}([A-Z][A-Za-z .'-]+?)\s{2,}20\d{2}:", block)
                 if trainer and trainer[1].strip().lower() != "owner":
                     runner["trainer_name"] = trainer[1].strip()
-                    runner["trainer_id"] = f"tn:{norm_name(trainer[1])}"
+                    runner["trainer_id"] = trainer_id(trainer[1])
                 if jockey:
                     runner["jockey_name"] = jockey[1].strip()
-                    runner["jockey_id"] = f"jn:{norm_name(jockey[1])}"
+                    runner["jockey_id"] = jockey_id(jockey[1])
                 if m[2]:
                     runner["ml_odds"] = parse_odds(m[2])
                 runners.append(runner)

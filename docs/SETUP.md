@@ -73,6 +73,15 @@ asks automated clients to identify themselves.
 
 Workflows must be on the **default branch** for schedules and dispatch to run. Scheduled data jobs stay off until you add the repository **variable** `REINMAN_ENABLED` = `true` (Settings → Secrets and variables → Actions → Variables) — do that once the racing-data secrets are in place.
 
+### One-off maintenance
+`reinman-maintenance` (Actions → reinman-maintenance → Run workflow) runs a data repair against
+the live database, holding the same lock as the other data jobs. Record each run in
+`docs/DATA_LOG.md`.
+
+* `canonicalize-people` rewrites stored jockey and trainer ids from their names, so one
+  person has one id however a source spelled them (`util.person_key`: surname plus first
+  initial, e.g. "Hernandez, Andy", "A. Hernandez" and "Hernandez A" are all `HERNANDEZ A`).
+
 ## 4. The clock (Worker → GitHub) — required
 GitHub's own schedules are unreliable (often hours late or skipped), so the Worker's
 5-minute cron starts the jobs: the race-day monitor hourly (10am–2am ET; the free PuntersEdge budget allows a fresh board read about every 45 minutes, and a private repo has 2,000 free Actions minutes a month), a

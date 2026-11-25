@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 
 from .sources.tracks import canonical_track_code
-from .util import norm_name, parse_distance_yards, parse_odds, parse_post_time, surface_code, to_int, now_iso
+from .util import jockey_id, norm_name, now_iso, parse_distance_yards, parse_odds, parse_post_time, surface_code, to_int, trainer_id
 
 
 def cards_from_bundle(data: object) -> list[dict] | None:
@@ -52,8 +52,8 @@ def cards_from_bundle(data: object) -> list[dict] | None:
             runner = {"program_number": program, "horse_name": name, "horse_id": f"name:{norm_name(name)}",
                       "post_position": to_int(row.get("post_position")), "jockey_name": row.get("jockey"),
                       "trainer_name": row.get("trainer"),
-                      "jockey_id": f"jn:{norm_name(row['jockey'])}" if row.get("jockey") else None,
-                      "trainer_id": f"tn:{norm_name(row['trainer'])}" if row.get("trainer") else None,
+                      "jockey_id": jockey_id(row.get("jockey")),
+                      "trainer_id": trainer_id(row.get("trainer")),
                       "ml_odds": parse_odds(row.get("morning_line")),
                       "weight": int(weight[0]) if weight else None, "medication": row.get("medication"),
                       "claiming": to_int(row.get("claim_price")), "extra": extra,

@@ -184,6 +184,48 @@ def norm_name(name: str | None) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+_SUFFIX = re.compile(r"\b(?:JR|SR|II|III|IV)\b\.?", re.I)
+_PARTICLES = {"DE", "DEL", "DA", "DI", "LA", "LE", "VAN", "VON", "ST", "SAN"}
+
+
+def person_key(name: str | None) -> str:
+    """One key for a jockey or trainer however a source writes the name:
+    "Hernandez, Andy", "Andy Hernandez", "A. Hernandez" and "Hernandez A" all give
+    "HERNANDEZ A". Surname (its last word, with particles such as "De La") plus first
+    initial: two riders sharing both would be merged, which is rare at one circuit."""
+    if not name:
+        return ""
+    s = _SUFFIX.sub(" ", re.sub(r"\(.*?\)", "", name)).replace("-", " ").replace(".", " ")
+    if "," in s:
+        last, first = s.split(",", 1)
+    else:
+        words = s.split()
+        if len(words) >= 2 and all(len(w) == 1 for w in words[1:]):
+            last, first = words[0], " ".join(words[1:])          # "Berrios J C"
+        elif len(words) >= 2:
+            first, last = words[0], " ".join(words[1:])          # "A Hernandez", "Andy De La Cruz"
+        else:
+            last, first = s, ""
+    surname = norm_name(last).split()
+    keep = surname[-1:]
+    for word in reversed(surname[:-1]):
+        if word not in _PARTICLES:
+            break
+        keep.insert(0, word)
+    initial = norm_name(first)[:1]
+    return " ".join(keep + ([initial] if initial else [])).strip()
+
+
+def jockey_id(name: str | None) -> str | None:
+    key = person_key(name)
+    return f"jn:{key}" if key else None
+
+
+def trainer_id(name: str | None) -> str | None:
+    key = person_key(name)
+    return f"tn:{key}" if key else None
+
+
 def person_id(prefix: str, given_id: Any, first: str | None, last: str | None) -> str | None:
     if given_id:
         return f"{prefix}:{given_id}"

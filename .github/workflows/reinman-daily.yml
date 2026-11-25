@@ -37,8 +37,8 @@ jobs:
       OTB_MIN_INTERVAL_MIN: ${{ vars.OTB_MIN_INTERVAL_MIN || '60' }}
       NWS_USER_AGENT: ${{ vars.NWS_USER_AGENT || '(rein-man personal handicapping app)' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with: { python-version: "3.12", cache: pip, cache-dependency-path: engine/pyproject.toml }
       - run: pip install -e .
       # The PDF/OCR tools take about a minute to install, so only when documents are waiting.

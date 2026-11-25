@@ -12,6 +12,7 @@
     reinman backfill --start --end   build the historical database from a source
     reinman import FILE              load a canonical JSON file (licensed data)
     reinman source-check --date D    validate the live source against adapter assumptions
+    reinman canonicalize-people      one-time: rewrite stored jockey/trainer ids from names
 """
 from __future__ import annotations
 
@@ -257,6 +258,26 @@ def inspect_documents(db: Database, doc_id: int | None, grep: str | None, max_ch
     return {"id": doc_id, "filename": doc["filename"], "chars": len(text)}
 
 
+def canonicalize_people(db: Database) -> dict:
+    """One-time repair: rewrite stored jockey/trainer ids from their names with the same
+    rule ingest now uses (``util.person_key``), so one person has one id everywhere."""
+    out = {}
+    for role, make in (("jockey", ingest.jockey_id), ("trainer", ingest.trainer_id)):
+        rows = db.query(f"SELECT DISTINCT {role}_name AS name, {role}_id AS id FROM runners "
+                        f"WHERE {role}_name IS NOT NULL")
+        fix = sorted({r["name"]: make(r["name"]) for r in rows if make(r["name"]) != r["id"]}.items())
+        step = max(1, (db.max_params - 1) // 3)
+        for i in range(0, len(fix), step):
+            chunk = fix[i:i + step]
+            case = " ".join("WHEN ? THEN ?" for _ in chunk)
+            params = [v for pair in chunk for v in pair] + [name for name, _ in chunk]
+            db.execute(f"UPDATE runners SET {role}_id = CASE {role}_name {case} END "
+                       f"WHERE {role}_name IN ({','.join('?' * len(chunk))})", params)
+        out[f"{role}_names_updated"] = len(fix)
+        out[f"{role}_ids_after"] = db.scalar(f"SELECT COUNT(DISTINCT {role}_id) FROM runners") or 0
+    return out
+
+
 def backfill(db: Database, start: str, end: str) -> dict:
     n = 0
     sources = configured_sources()
@@ -272,7 +293,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="reinman", description="Rein Man — The Intelligence Behind the Odds.")
     ap.add_argument("--db", help="sqlite:///path.db or d1 (default: $REINMAN_DB)")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for c in ("init", "monitor", "lock", "grade", "stats", "backtest", "documents-ready", "news"):
+    for c in ("init", "monitor", "lock", "grade", "stats", "backtest", "documents-ready", "news",
+              "canonicalize-people"):
         sub.add_parser(c)
     for c in ("daily", "train"):
         sub.add_parser(c).add_argument("--force", action="store_true", help="run even if it ran recently")
@@ -315,6 +337,7 @@ def main(argv=None) -> int:
     fn = {
         "monitor": lambda: monitor(db),
         "news": lambda: job(db, "news", news.refresh, db),
+        "canonicalize-people": lambda: job(db, "canonicalize_people", canonicalize_people, db),
         "daily": lambda: guarded(db, "daily_cycle", 12, a.force, lambda: daily(db)),
         "documents-ready": lambda: documents_ready(db),
         "inspect-documents": lambda: inspect_documents(db, a.id, a.grep, a.max_chars),
