@@ -177,9 +177,11 @@ class GBMScorer:
         self.rounds = rounds
         self.booster = None
         self.temp = 1.0
-        self.std = Standardizer(list(range(len(FEATURES))))
+        self.feature_count = len(FEATURES)
+        self.std = Standardizer(list(range(self.feature_count)))
 
     def _design(self, X):
+        X = X[:, :self.feature_count]
         rel = self.std.center(X)  # race-relative copy of every feature
         return np.hstack([X, rel])
 
@@ -214,7 +216,7 @@ class GBMScorer:
 
     def to_json(self):
         return {"params": self.params, "rounds": self.rounds, "temp": self.temp,
-                "model": self.booster.model_to_string()}
+                "model": self.booster.model_to_string(), "feature_count": self.feature_count}
 
     @classmethod
     def from_json(cls, d):
@@ -222,6 +224,8 @@ class GBMScorer:
         m = cls(d["params"], d["rounds"])
         m.temp = d["temp"]
         m.booster = lgb.Booster(model_str=d["model"])
+        m.feature_count = d.get("feature_count", m.booster.num_feature() // 2)
+        m.std = Standardizer(list(range(m.feature_count)))
         return m
 
 
@@ -318,9 +322,10 @@ class MarketBaseline:
 def load_model(artifact: str | dict):
     d = json.loads(artifact) if isinstance(artifact, str) else artifact
     if d["kind"] == "ensemble":
-        if d.get("features") != FEATURES:
+        if not d.get("features") or FEATURES[:len(d["features"])] != d["features"]:
             raise ValueError("model artifact was trained on a different feature set")
         return Ensemble.from_json(d)
     if d["kind"] == "market_baseline":
         return MarketBaseline()
     raise ValueError(f"unknown model kind {d['kind']}")
+
