@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Link } from "../main";
-import { money, odds, pct, postTime, signedPct, stamp, surfaceName, useApi, wagerLabel } from "../lib";
+import { fmtDate, usDates, money, odds, pct, postTime, signedPct, stamp, surfaceName, useApi, wagerLabel } from "../lib";
 import { HorseNumber, HorseSelection, Confidence, Decision, ErrorBox, Loading } from "./common";
 import { distance, ordinal } from "./Today";
 
@@ -73,9 +73,9 @@ function RedditDiscussions({ raceId, program }: { raceId: string; program: strin
 function EvidenceLine({ value }: { value: string }) {
   if (value.startsWith("• related headline (")) {
     const split = value.lastIndexOf(" — https://");
-    if (split >= 0) return <a href={value.slice(split + 3)} target="_blank" rel="noopener noreferrer">{value.slice(2, split)}</a>;
+    if (split >= 0) return <a href={value.slice(split + 3)} target="_blank" rel="noopener noreferrer">{usDates(value.slice(2, split))}</a>;
   }
-  return <>{value}</>;
+  return <>{usDates(value)}</>;
 }
 
 function PastPerformances({ rows }: { rows: PastPerf[] }) {
@@ -93,7 +93,7 @@ function PastPerformances({ rows }: { rows: PastPerf[] }) {
           <tbody>
             {rows.slice(0, 8).map((p) => (
               <tr key={`${p.date}-${p.track}`} className={p.finish === 1 ? "is-pick" : ""}>
-                <td>{p.date.slice(5)}<span className="muted">/{p.date.slice(2, 4)}</span></td>
+                <td>{fmtDate(p.date, true)}</td>
                 <td>{p.track}</td>
                 <td>{p.distance_raw}</td>
                 <td>{p.condition}</td>
@@ -168,7 +168,7 @@ function HorseProfile({ factors }: { factors: string[] }) {
               <ul>{groups.get(group)!.map((value, i) => {
                 const split = value.lastIndexOf(" — https://");
                 return <li key={i}>{split >= 0 ?
-                  <a href={value.slice(split + 3)} target="_blank" rel="noopener noreferrer">{value.slice(0, split)}</a> : value}</li>;
+                  <a href={value.slice(split + 3)} target="_blank" rel="noopener noreferrer">{usDates(value.slice(0, split))}</a> : usDates(value)}</li>;
               })}</ul>
             </div>
           ))}
@@ -198,7 +198,7 @@ export function Race({ id }: { id: string }) {
     <>
       <div className="page-head">
         <div>
-          <p className="crumb"><Link to={`/cards?date=${race.race_date}&track=${race.track_id}`}>{String(race.track_name || race.track_id)}</Link> · {String(race.race_date)}</p>
+          <p className="crumb"><Link to={`/cards?date=${race.race_date}&track=${race.track_id}`}>{String(race.track_name || race.track_id)}</Link> · {fmtDate(String(race.race_date))}</p>
           <h1>Race {String(race.race_number)}{race.post_time ? <span className="muted"> · {postTime(race.post_time as string)}</span> : null}</h1>
           <p className="muted">
             {distance({ distance_desc: race.distance_desc as string, distance_yards: race.distance_yards as number })} ·{" "}
@@ -224,7 +224,7 @@ export function Race({ id }: { id: string }) {
         <>
           <section className="take">
             <h2><img src="/gentleman-64.png" className="gentleman-logo" width={44} height={44} alt="" /> Rein Man's Take</h2>
-            <p>{p.take}</p>
+            <p>{usDates(p.take)}</p>
           </section>
           <section className="selections">
             <div><span>First</span><b>{name(p.top1)}</b></div>
@@ -340,7 +340,7 @@ export function Race({ id }: { id: string }) {
                     </span>
                     <span className="muted small">
                       {e.confirmed === false ? " Unconfirmed" : e.confirmed ? " Confirmed by the card" : " Caution: noted, not priced"}
-                      {" · "}{e.role !== "horse" ? `${e.role} ${e.entity} · ` : ""}{e.source} · {e.published_at?.slice(0, 10)}
+                      {" · "}{e.role !== "horse" ? `${e.role} ${e.entity} · ` : ""}{e.source} · {stamp(e.published_at)}
                     </span>
                     <div className="small"><a href={e.url} target="_blank" rel="noreferrer">“{e.sentence || e.title}”</a></div>
                   </li>

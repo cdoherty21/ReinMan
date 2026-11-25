@@ -11,7 +11,7 @@ import re
 from collections import Counter
 from datetime import date
 
-from .util import jockey_id, surface_code
+from .util import jockey_id, surface_code, us_date
 from .medication import label as medication_label
 
 PATTERNS = {
@@ -179,7 +179,7 @@ def evidence(profile: dict) -> list[str]:
         add("Recent form", f"{_n(record.get('starts'), 'recorded finish')} · {_n(record.get('wins'), 'win')} · {_n(record.get('itm'), 'top-three finish')}")
         for result in profile.get("recent_results", []):
             field = f" of {result['field_size']}" if result.get("field_size") else ""
-            add("Recent form", f"{result['date']} · {result['track']} · finished {result['finish']}{field}")
+            add("Recent form", f"{us_date(result['date'])} · {result['track']} · finished {result['finish']}{field}")
     else:
         add("Recent form", "Complete prior race finishes are unavailable.")
     figures = context.get("reported_figures") or context.get("beyer_figures") or []
@@ -200,7 +200,7 @@ def evidence(profile: dict) -> list[str]:
         add("Racing behavior", f"{tag.capitalize()}: observed in {count} of {_n(profile['comments'], 'documented trip')}.")
     for p in profile.get("observations", []):
         source = f"{p['source']}, document #{p['document_id']}" if p.get("document_id") else p["source"]
-        add("Trip history", f"{p['date']} · {p['track']}" + (f" R{p['race_number']}" if p.get("race_number") else "") +
+        add("Trip history", f"{us_date(p['date'])} · {p['track']}" + (f" R{p['race_number']}" if p.get("race_number") else "") +
             f" · {source}: “{p['comment']}”")
 
     race_context = [context.get("track"), {"D": "Dirt", "T": "Turf", "S": "Synthetic"}.get(context.get("surface")),
@@ -240,7 +240,7 @@ def evidence(profile: dict) -> list[str]:
         add("Preparation", "Same track as its last recorded start." if not context["travel_miles"] else
             f"Shipped about {_n(context['travel_miles'], 'mile')} from its last recorded start.")
     if context.get("workouts_30d"):
-        add("Preparation", f"{_n(context['workouts_30d'], 'recorded workout')} in the past 30 days; latest {context['last_work_date']}.")
+        add("Preparation", f"{_n(context['workouts_30d'], 'recorded workout')} in the past 30 days; latest {us_date(context['last_work_date'])}.")
     else:
         add("Preparation", "Recent workout details unavailable.")
     return out

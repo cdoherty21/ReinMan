@@ -293,3 +293,12 @@ def fmt_odds(dec: float | None) -> str:
     if f.denominator == 1:
         return f"{f.numerator}-1"
     return f"{f.numerator}-{f.denominator}"
+
+
+def us_date(value, short: bool = False) -> str:
+    """'2026-11-23' -> '11/23/2026' (or '11/23/26'); anything else is returned unchanged."""
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", str(value or ""))
+    if not m:
+        return str(value or "")
+    year = m.group(1)[2:] if short else m.group(1)
+    return f"{int(m.group(2))}/{int(m.group(3))}/{year}"

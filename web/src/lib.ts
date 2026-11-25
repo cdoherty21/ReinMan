@@ -85,9 +85,25 @@ export function postTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
+// Dates read month/day/year: 11/25/2026. A bare race date ("2026-11-25") is a calendar
+// day, not an instant, so it is formatted from its parts and never shifted by time zone.
+export function fmtDate(d: string | null | undefined, short = false): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d ?? "");
+  if (!m) return d || "—";
+  return `${Number(m[2])}/${Number(m[3])}/${short ? m[1].slice(2) : m[1]}`;
+}
+// Dates written inside stored analysis text ("2026-11-23 · PRX") read as 11/23/2026.
+export const usDates = (text: string) =>
+  text.replace(/\b(\d{4})-(\d{2})-(\d{2})(?![\dT:])/g, (_, y, m, d) => `${Number(m)}/${Number(d)}/${y}`);
+export function dayName(d: string, style: "long" | "short" = "long"): string {
+  return new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { weekday: style, timeZone: "UTC" });
+}
 export function stamp(iso: string | null | undefined): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return iso;
+  const day = t.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
+  return `${day} ${t.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
 }
 export const surfaceName = (s: string | null | undefined) => ({ D: "Dirt", T: "Turf", S: "Synthetic" })[s ?? ""] ?? "—";
 

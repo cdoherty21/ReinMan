@@ -12,7 +12,7 @@ import numpy as np
 
 from .config import POLICY, Policy
 from .horse_profiles import _n
-from .util import fmt_odds
+from .util import fmt_odds, us_date
 
 PHRASES = {
     "ml_logp": ("the morning line respects him", "the morning line has him well down the order"),
@@ -110,7 +110,7 @@ def runner_factors(i: int, contrib: np.ndarray | None, evidence: dict, X: np.nda
         lines.append(f"• same track as last start ({ev['previous_track']}); {days}" if not ev["travel_miles"] else
                      f"• {ev['travel_miles']} miles from last race venue ({ev['previous_track']}); {days}")
     if ev.get("workouts_30d"):
-        lines.append(f"• {_n(ev['workouts_30d'], 'recorded workout')} in last 30 days; latest {ev['last_work_date']}")
+        lines.append(f"• {_n(ev['workouts_30d'], 'recorded workout')} in last 30 days; latest {us_date(ev['last_work_date'])}")
     if ev.get("beyer_figures"):
         lines.append("• recent Beyer figures (latest first): " + ", ".join(map(str, ev["beyer_figures"])))
     for person in ("trainer", "jockey"):

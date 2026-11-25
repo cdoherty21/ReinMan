@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { money, pct } from "../lib";
+import { useEffect, useRef, useState } from "react";
+import { fmtDate, money, pct } from "../lib";
 
 // Series colors validated for the cream chart surface (#fbf8f0); the pair sits in the
 // CVD 6–8 ΔE band, so the second series also carries a dash pattern and direct labels.
@@ -10,55 +10,102 @@ const SERIES = [
 
 type Pt = { date: string; [k: string]: number | string };
 
-export function PLChart({ data, series }: { data: Pt[]; series: { key: string; label: string }[] }) {
+const DAY = 86_400_000;
+const dayNum = (d: string) => Date.parse(`${d}T00:00:00Z`) / DAY;
+
+// Rendered at the figure's real pixel width (not a scaled viewBox) so text keeps the same
+// size on a phone and a wide screen. Points sit on a calendar axis, so a dark day shows as
+// a gap rather than being squeezed out.
+export function PLChart({ data, series }: { data: Pt[]; series: { key: string; label: string; short: string }[] }) {
   const [hover, setHover] = useState<number | null>(null);
+  const [W, setW] = useState(720);
+  const ref = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setW(Math.max(280, Math.round(e.contentRect.width))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [data.length >= 2]);
   if (data.length < 2) return <p className="muted">The profit/loss chart appears after two days of graded races.</p>;
-  const W = 720, H = 260, L = 64, R = 120, T = 14, B = 28;
+
+  const narrow = W < 520;
+  const H = narrow ? 220 : 260, L = narrow ? 50 : 60, R = narrow ? 12 : 128, T = 12, B = 26;
   const vals = data.flatMap((d) => series.map((s) => Number(d[s.key])));
   let lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
-  if (hi - lo < 1) { hi += 1; lo -= 1; }
-  const x = (i: number) => L + (i * (W - L - R)) / (data.length - 1);
+  if (hi - lo < 2) { hi += 1; lo -= 1; }
+  const ticks = niceTicks(lo, hi, narrow ? 4 : 5);
+  lo = Math.min(lo, ticks[0]); hi = Math.max(hi, ticks[ticks.length - 1]);
+  const pad = (hi - lo) * 0.04;
+  lo -= pad; hi += pad;
+  const d0 = dayNum(data[0].date), span = Math.max(1, dayNum(data[data.length - 1].date) - d0);
+  const x = (i: number) => L + ((dayNum(data[i].date) - d0) * (W - L - R)) / span;
   const y = (v: number) => T + ((hi - v) * (H - T - B)) / (hi - lo);
-  const ticks = niceTicks(lo, hi, 5);
   const path = (k: string) => data.map((d, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(Number(d[k])).toFixed(1)}`).join("");
   const last = data[data.length - 1];
+
+  // Date labels: as many as fit without crowding, always the first and the last.
+  const xTicks: number[] = [];
+  const gap = 72;
+  const n = data.length - 1;
+  const at = (i: number) => x(i) + (i === 0 ? 24 : i === n ? -24 : 0); // first and last labels are edge-aligned
+  data.forEach((_, i) => {
+    if (i === n) {
+      while (xTicks.length > 1 && at(i) - at(xTicks[xTicks.length - 1]) < gap) xTicks.pop();
+      xTicks.push(i);
+    } else if (!xTicks.length || at(i) - at(xTicks[xTicks.length - 1]) >= gap) xTicks.push(i);
+  });
+
   const labelY = series.map((s) => y(Number(last[s.key])) + 4);
-  if (labelY.length === 2 && Math.abs(labelY[0] - labelY[1]) < 14) {
+  if (labelY.length === 2 && Math.abs(labelY[0] - labelY[1]) < 15) {
     const up = labelY[0] <= labelY[1] ? 0 : 1;
-    labelY[up] -= 7;
-    labelY[1 - up] += 7;
+    const mid = (labelY[0] + labelY[1]) / 2;
+    labelY[up] = mid - 7.5;
+    labelY[1 - up] = mid + 7.5;
   }
-  const xTicks = [0, Math.floor((data.length - 1) / 2), data.length - 1];
+  const money0 = (v: number) => money(v).replace(".00", "");
+  const pick = (clientX: number, el: Element) => {
+    const r = el.getBoundingClientRect();
+    const px = clientX - r.left;
+    let best = 0;
+    data.forEach((_, i) => { if (Math.abs(x(i) - px) < Math.abs(x(best) - px)) best = i; });
+    setHover(best);
+  };
+  // Tooltip beside the crosshair, on the side with more room, so it never hides the point.
+  const tip = hover == null ? {} : x(hover) > (L + W - R) / 2 ? { right: `${W - x(hover) + 10}px` } : { left: `${x(hover) + 10}px` };
   return (
-    <figure className="chart">
+    <figure className="chart" ref={ref}>
       <div className="legend">
         {series.map((s, i) => (
-          <span key={s.key}><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke={SERIES[i].color} strokeWidth="2" strokeDasharray={SERIES[i].dash} /></svg>{s.label}</span>
+          <span key={s.key}><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke={SERIES[i].color} strokeWidth="2" strokeDasharray={SERIES[i].dash} /></svg>
+            {s.label}{narrow && <b className="legend-val">{money(Number(last[s.key]))}</b>}</span>
         ))}
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Cumulative profit and loss by race date"
-        onMouseLeave={() => setHover(null)}
-        onMouseMove={(e) => {
-          const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
-          const px = ((e.clientX - r.left) / r.width) * W;
-          const i = Math.round(((px - L) / (W - L - R)) * (data.length - 1));
-          setHover(Math.max(0, Math.min(data.length - 1, i)));
-        }}>
+      <svg width={W} height={H} role="img" aria-label="Cumulative profit and loss by race date" style={{ touchAction: "pan-y" }}
+        onPointerLeave={() => setHover(null)}
+        onPointerDown={(e) => pick(e.clientX, e.currentTarget)}
+        onPointerMove={(e) => pick(e.clientX, e.currentTarget)}>
         {ticks.map((t) => (
           <g key={t}>
             <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} className={t === 0 ? "zero" : "grid"} />
-            <text x={L - 8} y={y(t) + 4} textAnchor="end" className="axis">{money(t).replace(".00", "")}</text>
+            <text x={L - 8} y={y(t) + 4} textAnchor="end" className="axis">{money0(t)}</text>
           </g>
         ))}
-        {xTicks.map((i) => (
-          <text key={i} x={x(i)} y={H - 8} textAnchor="middle" className="axis">{data[i].date.slice(5)}</text>
+        {xTicks.map((i, k) => (
+          <text key={i} x={x(i)} y={H - 6} className="axis"
+            textAnchor={k === 0 ? "start" : k === xTicks.length - 1 ? "end" : "middle"}>{fmtDate(data[i].date, true)}</text>
         ))}
         {series.map((s, i) => (
           <g key={s.key}>
-            <path d={path(s.key)} fill="none" stroke={SERIES[i].color} strokeWidth="2" strokeDasharray={SERIES[i].dash} strokeLinejoin="round" />
-            <text x={x(data.length - 1) + 8} y={labelY[i]} className="direct">
-              {s.label.split(" ")[0]} {money(Number(data[data.length - 1][s.key]))}
-            </text>
+            <path d={path(s.key)} fill="none" stroke={SERIES[i].color} strokeWidth="2" strokeDasharray={SERIES[i].dash} strokeLinejoin="round" strokeLinecap="round" />
+            {data.length <= 12 && data.map((d, j) => (
+              <circle key={j} cx={x(j)} cy={y(Number(d[s.key]))} r="2.5" fill={SERIES[i].color} />
+            ))}
+            {!narrow && (
+              <text x={x(data.length - 1) + 8} y={labelY[i]} className="direct">
+                {s.short} {money(Number(last[s.key]))}
+              </text>
+            )}
           </g>
         ))}
         {hover != null && (
@@ -69,11 +116,10 @@ export function PLChart({ data, series }: { data: Pt[]; series: { key: string; l
             ))}
           </g>
         )}
-        <rect x={L} y={T} width={W - L - R} height={H - T - B} fill="transparent" />
       </svg>
       {hover != null && (
-        <div className="tooltip" style={{ left: `${(x(hover) / W) * 100}%` }}>
-          <b>{data[hover].date}</b>
+        <div className="tooltip side" style={tip}>
+          <b>{fmtDate(data[hover].date)}</b>
           {series.map((s) => <div key={s.key}>{s.label}: {money(Number(data[hover][s.key]))}</div>)}
         </div>
       )}

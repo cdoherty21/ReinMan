@@ -1,5 +1,5 @@
 import { Link } from "../main";
-import { postTime, shiftDate, surfaceName, useApi } from "../lib";
+import { dayName, fmtDate, postTime, shiftDate, surfaceName, useApi } from "../lib";
 import { HorseNumber, Confidence, DatePicker, Decision, Empty, ErrorBox, Loading, useDateParam } from "./common";
 
 export type RaceRow = {
@@ -45,7 +45,7 @@ export function Today() {
       <div className="page-head">
         <div>
           <h1>Today</h1>
-          <p className="muted">Race card for {new Date(`${date}T12:00:00`).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</p>
+          <p className="muted">Race card for {dayName(date)} {fmtDate(date)}</p>
         </div>
         <DatePicker date={date} onChange={setDate} />
       </div>
@@ -81,7 +81,7 @@ export function Today() {
                 </p>
               </div>
               <button className="btn ghost" onClick={() => setDate(shiftDate(date, 1))}>
-                Next card: {new Date(`${shiftDate(date, 1)}T12:00:00`).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })} ›
+                Next card: {dayName(shiftDate(date, 1), "short")} {fmtDate(shiftDate(date, 1))} ›
               </button>
             </section>
           )}

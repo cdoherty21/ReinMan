@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "../main";
-import { money, odds, shiftDate, stamp, todayET, useApi, wagerLabel } from "../lib";
+import { fmtDate, money, odds, shiftDate, stamp, todayET, useApi, wagerLabel } from "../lib";
 import { HorseNumber, HorseSelection, Confidence, Empty, ErrorBox, Loading } from "./common";
 import { ordinal } from "./Today";
 
@@ -47,7 +47,7 @@ function WagerBreakdown({ row, onClose }: { row: Row; onClose: () => void }) {
         <h2 id="wager-breakdown-title">{row.track_id} R{row.race_number} · Wager breakdown</h2>
         <button className="btn ghost small" onClick={() => dialog.current?.close()}>Close</button>
       </div>
-      <p className="muted small">{row.race_date} · Rein Man's hypothetical wagers</p>
+      <p className="muted small">{fmtDate(row.race_date)} · Rein Man's hypothetical wagers</p>
       {error && <ErrorBox error={error} />}
       {!data && !error && <Loading />}
       {data && (
@@ -119,7 +119,7 @@ export function History() {
               <tbody>
                 {data.rows.map((r) => (
                   <tr key={r.race_id}>
-                    <td>{r.race_date}</td>
+                    <td>{fmtDate(r.race_date)}</td>
                     <td><Link to={`/race/${r.race_id}`}><b>{r.track_id}</b> R{r.race_number}</Link></td>
                     <td><HorseNumber number={r.top1} /> {r.top1_name}</td>
                     <td className="num">{odds(r.top1_odds)}</td>
