@@ -6,6 +6,7 @@ import { extractText } from "../extract";
 import { Empty, ErrorBox, Loading } from "./common";
 
 type Summary = {
+  historical_import?: boolean; winner_records?: number; rejected_rows?: number;
   races_linked?: string[]; horses_matched?: number; workouts?: number; workouts_applied_to_cards?: number;
   payouts?: number; scratch_mentions?: number; canonical_import?: boolean;
   cards?: number; official?: number; race_cards_imported?: string[]; waiting_for_race?: number; message?: string; partial_missing_races?: number[]; partial_conflicts?: number[];
@@ -164,7 +165,7 @@ function DocRow({ d, open, onToggle }: { d: Doc; open: boolean; onToggle: () => 
         <td>
           {d.status === "pending" ? <span className="muted">Awaiting automatic scan</span> :
             d.status === "waiting" ? <span className="muted">Waiting for the race card</span> :
-            d.status === "error" ? <span className="neg">{d.error || "Scan failed"}</span> : <span className="pos">Scanned</span>}
+            d.status === "error" ? <span className="neg">{d.error || "Scan failed"}</span> : <span className="pos">{s?.historical_import ? "Historical data recognized" : "Scanned"}</span>}
         </td>
         <td className="small">{s?.message || found || "—"}</td>
         <td><a className="btn ghost small" href={`/api/documents/${d.id}/file?download`}>Download</a>{d.status === "processed" && <button className="btn ghost small" aria-expanded={open} onClick={onToggle}>{open ? "Hide" : "Details"}</button>}</td>
@@ -184,7 +185,7 @@ function DocDetail({ id, summary }: { id: number; summary: Summary | null }) {
       {races.length > 0 && (
         <p className="small">Linked races: {races.map((r) => <Link key={r} to={`/race/${r}`} className="chip">{r}</Link>)}</p>
       )}
-      {races.length === 0 && !summary?.canonical_import && (
+      {races.length === 0 && !summary?.canonical_import && !summary?.historical_import && (
         <p className="small muted">No stored race matched this document's horse names. Set the race date and track when uploading, or upload once the card is loaded.</p>
       )}
       {Boolean(summary?.partial_missing_races?.length) &&
@@ -199,3 +200,4 @@ function DocDetail({ id, summary }: { id: number; summary: Summary | null }) {
     </div>
   );
 }
+
