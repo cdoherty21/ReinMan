@@ -13,6 +13,25 @@ log = logging.getLogger("reinman.ingest")
 
 ODDS_MOVE = 0.35  # relative change in implied win probability that triggers an update
 
+# Which tote changes are stored (runners.live_odds and an odds_snapshots row). Every read
+# is still used in full for that run's predictions (``fresh``); this only decides what
+# is worth keeping. Near post every tote change is kept, so line movement into the
+# closing price is complete; far from post only real moves are.
+NEAR_POST_MIN = 30
+FAR_MOVE = 0.10   # relative change in implied probability that is kept far from post
+
+
+def odds_worth_saving(new: float | None, old: float | None, minutes_to_post: float | None,
+                      far_move: float = FAR_MOVE, near_post: float = NEAR_POST_MIN) -> bool:
+    if new is None:
+        return False
+    if old is None:
+        return True
+    if minutes_to_post is not None and minutes_to_post <= near_post:
+        return abs(new - old) > 1e-9
+    a, b = 1 / (new + 1), 1 / (old + 1)
+    return abs(a - b) / max(b, 1e-6) >= far_move
+
 
 def canonical_people(runner: dict) -> dict:
     """Jockey and trainer ids derived from their names (``util.person_key``), so the
@@ -30,11 +49,20 @@ def race_id_for(track_id: str, race_date: str, race_number: int, day_evening: st
 
 def upsert_track(db: Database, meet: dict) -> None:
     info = track_info(meet["track_id"])
-    db.upsert_many("tracks", [{
+    db.sync("tracks", [{
         "track_id": meet["track_id"], "name": info.get("name") or meet.get("track_name") or meet["track_id"],
         "country": meet.get("country") or "USA", "category": meet.get("category") or "thoroughbred",
         "timezone": meet.get("timezone") or info.get("tz"), "lat": info.get("lat"), "lon": info.get("lon"),
         "updated_at": now_iso()}], key=["track_id"])
+
+
+def _minutes_to(post_time: str | None) -> float | None:
+    if not post_time:
+        return None
+    try:
+        return (parse_iso(post_time) - parse_iso(now_iso())).total_seconds() / 60
+    except (TypeError, ValueError):
+        return None
 
 
 def _merge_extra(previous: dict | None, incoming: dict | None) -> str | None:
@@ -56,19 +84,23 @@ def _merge_extra(previous: dict | None, incoming: dict | None) -> str | None:
     return json.dumps(merged) if merged else None
 
 
-def store_card(db: Database, card: dict, source: str | None = None) -> dict[str, list[str]]:
-    """Insert/refresh a meet's races and runners.
+def store_card(db: Database, card: dict, source: str | None = None, fresh: dict | None = None,
+               far_move: float = FAR_MOVE) -> dict[str, list[str]]:
+    """Insert/refresh a meet's races and runners, writing only what changed.
 
     Returns {race_id: [reasons]} for races whose handicapping inputs changed in a way
     that warrants a fresh prediction (new card, scratch, jockey change, odds move,
-    track condition or surface change).
+    track condition or surface change). ``fresh`` (optional) receives every live odds
+    value read in this run, {race_id: {"read_at": t, "odds": {program: odds}}}, so this
+    run's predictions use the full read even where a small move is not stored.
     """
     meet = card["meet"]
     source = source or meet.get("source") or "unknown"
     upsert_track(db, meet)
-    db.upsert_many("meets", [{"meet_id": meet["meet_id"], "track_id": meet["track_id"],
-                              "race_date": meet["race_date"], "source": source,
-                              "fetched_at": now_iso()}], key=["meet_id"])
+    db.sync("meets", [{"meet_id": meet["meet_id"], "track_id": meet["track_id"],
+                       "race_date": meet["race_date"], "source": source,
+                       "fetched_at": now_iso()}], key=["meet_id"], ignore=("fetched_at",))
+    read_at = now_iso()
     changed: dict[str, list[str]] = {}
     for r in card["races"]:
         rid = race_id_for(meet["track_id"], meet["race_date"], r["race_number"], r.get("day_evening", "D"))
@@ -86,7 +118,7 @@ def store_card(db: Database, card: dict, source: str | None = None) -> dict[str,
                     (parse_iso(r["post_time"]) - parse_iso(prev_race["post_time"])).total_seconds()) >= 180:
                 reasons.append("post_time")
         status = "cancelled" if r.get("is_cancelled") else (prev_race or {}).get("status", "scheduled")
-        db.upsert_many("races", [{
+        race_row = {
             "race_id": rid, "meet_id": meet["meet_id"], "track_id": meet["track_id"],
             "race_date": meet["race_date"], "race_number": r["race_number"], "post_time": r.get("post_time"),
             "surface": r.get("surface"), "distance_yards": r.get("distance_yards"),
@@ -97,8 +129,15 @@ def store_card(db: Database, card: dict, source: str | None = None) -> dict[str,
             "breed": r.get("breed"), "pools": r.get("pools") or None, "track_condition": r.get("track_condition"),
             "weather_desc": r.get("weather_desc"), "temp_f": r.get("temp_f"), "precip_pct": r.get("precip_pct"),
             "is_cancelled": bool(r.get("is_cancelled")), "status": status, "source": source,
-            "updated_at": now_iso()}], key=["race_id"])
+            "updated_at": now_iso()}
+        if prev_race:
+            # A source leaving a field blank is not news: keep what is stored (weather
+            # filled from NWS, a condition read from the chart, and so on).
+            race_row = {k: (prev_race.get(k) if v is None else v) for k, v in race_row.items()}
+        db.sync("races", [race_row], key=["race_id"], existing={(rid,): prev_race} if prev_race else {})
         rows, snaps = [], []
+        to_post = _minutes_to(r.get("post_time") or (prev_race or {}).get("post_time"))
+        live_read, pools_read, held = {}, {}, []
         for rn in r["runners"]:
             rn = canonical_people(rn)
             p = prev_runners.get(rn["program_number"])
@@ -133,11 +172,26 @@ def store_card(db: Database, card: dict, source: str | None = None) -> dict[str,
                         if key == "medication" and (rn.get("extra") or {}).get("medication_report") is not None:
                             continue
                         rows[-1][key] = p.get(key)
-            if rn.get("live_odds") is not None or rn.get("win_pool") is not None:
-                snaps.append({"race_id": rid, "program_number": rn["program_number"], "captured_at": now_iso(),
-                              "live_odds": rn.get("live_odds"), "win_pool": rn.get("win_pool"),
-                              "place_pool": rn.get("place_pool"), "show_pool": rn.get("show_pool")})
-        db.upsert_many("runners", rows, key=["race_id", "program_number"])
+            lo = rn.get("live_odds")
+            if lo is not None:
+                live_read[rn["program_number"]] = lo
+            if rn.get("win_pool") is not None:
+                pools_read[rn["program_number"]] = {k: rn.get(f"{k}_pool") for k in ("win", "place", "show")}
+            old_odds = p.get("live_odds") if p else None
+            keep = odds_worth_saving(lo, old_odds, to_post, far_move)
+            if not keep and p is not None:
+                rows[-1]["live_odds"] = old_odds  # small move: keep the stored value
+            if lo is not None or rn.get("win_pool") is not None:
+                snap = {"race_id": rid, "program_number": rn["program_number"], "captured_at": read_at,
+                        "live_odds": lo, "win_pool": rn.get("win_pool"),
+                        "place_pool": rn.get("place_pool"), "show_pool": rn.get("show_pool")}
+                (snaps if keep or p is None else held).append(snap)
+        if live_read and fresh is not None:
+            fresh[rid] = {"read_at": read_at, "odds": live_read, "pools": pools_read}
+        db.sync("runners", rows, key=["race_id", "program_number"],
+                existing={(rid, k): v for k, v in prev_runners.items()})
+        if snaps and held and to_post is not None and to_post <= NEAR_POST_MIN:
+            snaps += held  # near post a changed race is snapshotted whole: a consistent line at each step
         db.insert_many("odds_snapshots", snaps)
         for c in r.get("changes") or []:
             db.insert_many("race_changes", [{"race_id": rid, "change_type": c.get("type"), "text": c["text"]}],

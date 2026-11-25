@@ -36,3 +36,17 @@ describe("monitorPlan", () => {
     expect(etHour(new Date("2026-07-01T18:00:00Z"))).toBe(14);
   });
 });
+
+import { cronWorthLogging } from "./index";
+
+describe("cron logging (D1 write budget)", () => {
+  it("writes nothing for a quiet tick", () => {
+    expect(cronWorthLogging(0, { monitor: "next post in 40 min", documents: "no pending documents", daily: "not due", learn: "not due" })).toBe(false);
+    expect(cronWorthLogging(0, { monitor: "2 race(s) off within 14 min: dispatch 204" })).toBe(false);
+  });
+  it("logs locks and failures", () => {
+    expect(cronWorthLogging(2, {})).toBe(true);
+    expect(cronWorthLogging(0, { monitor: "results: dispatch 422" })).toBe(true);
+    expect(cronWorthLogging(0, { documents: "dispatch failed" })).toBe(true);
+  });
+});

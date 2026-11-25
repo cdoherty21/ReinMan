@@ -161,6 +161,12 @@ async function dispatchOnce(env: Env, job: string, workflow: string, cooldown: s
   return result;
 }
 
+/** Whether a cron tick did anything worth a job_runs row (each row is a billed D1 write). */
+export function cronWorthLogging(locked: number, dispatch: Record<string, string>): boolean {
+  // Successful dispatches already have their own claim row; log locks and failures.
+  return locked > 0 || Object.values(dispatch).some((r) => /failed|error|dispatch [345]\d\d/.test(r));
+}
+
 /** Daily cycle ~6:40am ET (10:40 UTC) and weekly learning Mondays ~5:20am ET (09:20 UTC). */
 export function scheduledJobsDue(when: Date): { daily: boolean; learn: boolean } {
   const h = when.getUTCHours(), m = when.getUTCMinutes();
@@ -832,11 +838,20 @@ export default {
       daily: due.daily ? await dispatchOnce(env, "daily_dispatch", "reinman-daily.yml", "-20 hours") : "not due",
       learn: due.learn ? await dispatchOnce(env, "learn_dispatch", "reinman-learn.yml", "-6 days") : "not due",
     };
-    await env.DB.prepare("INSERT INTO job_runs (job, finished_at, status, details) VALUES ('worker_cron', strftime('%Y-%m-%dT%H:%M:%fZ','now'), 'ok', ?)")
-      .bind(JSON.stringify({ locked, dispatch }))
-      .run();
-    await env.DB.prepare("DELETE FROM job_runs WHERE job IN ('worker_cron','reddit_lookup') AND started_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 days')").run();
-    await env.DB.prepare("DELETE FROM login_failures WHERE at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day')").run();
+    // D1 write budget: a tick that did nothing writes nothing. Ticks that locked a race or
+    // started a job are logged; the quiet ones only go to the Worker's own logs.
+    if (cronWorthLogging(locked, dispatch)) {
+      await env.DB.prepare("INSERT INTO job_runs (job, finished_at, status, details) VALUES ('worker_cron', strftime('%Y-%m-%dT%H:%M:%fZ','now'), 'ok', ?)")
+        .bind(JSON.stringify({ locked, dispatch }))
+        .run();
+    } else {
+      console.log("cron", JSON.stringify({ locked, dispatch }));
+    }
+    // Housekeeping once a day (03:00–03:04 UTC) rather than on every tick.
+    if (when.getUTCHours() === 3 && when.getUTCMinutes() < 5) {
+      await env.DB.prepare("DELETE FROM job_runs WHERE job IN ('worker_cron','reddit_lookup') AND started_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 days')").run();
+      await env.DB.prepare("DELETE FROM login_failures WHERE at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day')").run();
+    }
   },
 } satisfies ExportedHandler<Env>;
 

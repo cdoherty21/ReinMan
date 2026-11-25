@@ -242,13 +242,17 @@ def drift(picks: list[dict], window: int = 300) -> dict:
 
 
 def refresh_stats(db: Database) -> dict:
+    """Recompute the performance pages; only caches whose numbers changed are written."""
     overall = compute(db)
-    db.upsert_many("stats_cache", [{"key": "overall", "json": json.dumps(overall), "computed_at": _now()}], key=["key"])
+    rows = [{"key": "overall", "json": json.dumps(overall, sort_keys=True), "computed_at": _now()}]
     tracks = [r["track_id"] for r in db.query("SELECT DISTINCT r.track_id FROM grades g JOIN races r ON r.race_id=g.race_id")]
-    for t in tracks:
-        db.upsert_many("stats_cache", [{"key": f"track:{t}", "json": json.dumps(compute(db, t)), "computed_at": _now()}],
-                       key=["key"])
-    return {"tracks": len(tracks), "graded": overall["picks"]["graded"], "drift": overall.get("drift")}
+    rows += [{"key": f"track:{t}", "json": json.dumps(compute(db, t), sort_keys=True), "computed_at": _now()} for t in tracks]
+    existing = {(r["key"],): r for r in db.query("SELECT key, json FROM stats_cache")}
+    written = db.sync("stats_cache", rows, key=["key"], existing=existing, ignore=("computed_at",))
+    if not written["inserted"] and not written["updated"]:
+        # Nothing changed; mark the overall cache as current so stats_stale() is satisfied.
+        db.execute("UPDATE stats_cache SET computed_at=? WHERE key='overall'", [_now()])
+    return {"tracks": len(tracks), "graded": overall["picks"]["graded"], "drift": overall.get("drift"), **written}
 
 
 def _now():

@@ -40,15 +40,34 @@ def _latest_pools(db: Database, race_id: str, progs: list[str], since: str = "")
     return out or None
 
 
+def _fresh_pools(read: dict | None, progs: list[str]) -> dict | None:
+    pools = (read or {}).get("pools") or {}
+    if not pools or any(p not in pools for p in progs):
+        return None
+    out = {}
+    for key in ("win", "place", "show"):
+        arr = np.array([pools[p][key] if pools[p].get(key) is not None else np.nan for p in progs], dtype=float)
+        if np.all(np.isfinite(arr)):
+            out[key] = arr
+    return out or None
+
+
 def analyze_race(db: Database, h, model_version: str, model, artifact: dict, race: dict,
-                 runners: list[dict]) -> dict | None:
+                 runners: list[dict], fresh: dict | None = None) -> dict | None:
+    """``fresh`` is this run's tote read ({race_id: {"read_at", "odds", "pools"}}, from
+    ``ingest.store_card``). Live odds count only when read within 5 minutes; the read is
+    used whole even where a small move was not stored."""
     live = [r for r in runners if not r["scratched"]]
     if len(live) < 2:
         return None
     since = ""
+    read = (fresh or {}).get(race["race_id"])
     if race.get("source") == "puntersedge":
         since = to_iso(parse_iso(now_iso()) - timedelta(minutes=5))
-        live = [r if (r.get("updated_at") or "") >= since else dict(r, live_odds=None) for r in live]
+        if read and read["read_at"] >= since:
+            live = [dict(r, live_odds=read["odds"].get(r["program_number"])) for r in live]
+        else:
+            live = [dict(r, live_odds=None) for r in live]
     X, evidence = featurize_race(h, race, runners)
     progs = [r["program_number"] for r in live]
     names = [r["horse_name"] for r in live]
@@ -79,14 +98,16 @@ def analyze_race(db: Database, h, model_version: str, model, artifact: dict, rac
             offered = {x["wager_type"] for x in json.loads(race["pools"])} | {"WIN", "PLACE", "SHOW"}
         except (ValueError, TypeError, KeyError):
             offered = None
-    pools = _latest_pools(db, race["race_id"], progs, since)
+    pools = _fresh_pools(read, progs) if read else None
+    if pools is None:
+        pools = _latest_pools(db, race["race_id"], progs, since)
     wagers = race_wagers(p, progs, odds, odds_src, pools, race["track_id"], race["race_id"], offered,
                          POLICY, lambdas)
     watch = win_watch(p, progs, odds, odds_src, POLICY)
     for w in watch:
         w["horse_name"] = names[progs.index(w["selection"])]
-    odds_as_of = db.scalar("SELECT MAX(captured_at) FROM odds_snapshots WHERE race_id=? AND live_odds IS NOT NULL",
-                           [race["race_id"]])
+    odds_as_of = (read or {}).get("read_at") or db.scalar(
+        "SELECT MAX(captured_at) FROM odds_snapshots WHERE race_id=? AND live_odds IS NOT NULL", [race["race_id"]])
     sel = select(race["race_id"], progs, names, p, comps, odds, odds_src, factors, wagers, completeness,
                  artifact.get("kind", "?"), watch=watch)
     events = news_events.for_race(db, race["race_id"], runners, now_iso())
@@ -114,13 +135,18 @@ def analyze_race(db: Database, h, model_version: str, model, artifact: dict, rac
             "uncertainty": float(unc[i]) if unc is not None else None, "factors": factors[i]})
     unavailable = [k for k, v in avail.items() if not v]
     pace = projected_pace(X)
-    inputs_hash = stable_hash({"m": model_version, "X": np.round(np.nan_to_num(X, nan=-999), 6).tolist(),
-                               "odds": np.round(np.nan_to_num(odds, nan=-1), 3).tolist(), "progs": progs,
+    # Everything the analysis rests on except the tote's minute-to-minute numbers: the
+    # card, the people, the news, the profiles. Odds-driven change is judged on the
+    # output instead (``material_change``), so a tick in the pools does not store a copy.
+    inputs_hash = stable_hash({"m": model_version, "progs": progs, "odds_sources": odds_src,
+                               "card": [(r.get("post_position"), r.get("jockey_id"), r.get("trainer_id"),
+                                         r.get("weight"), r.get("equipment"), r.get("medication"))
+                                        for r in live],
                                "cond": race.get("track_condition"), "surface": race.get("surface"),
+                               "distance": race.get("distance_yards"), "post": race.get("post_time"),
                                "news": relevant_news,
                                "horse_profiles": [e.get("horse_profile") for e in evidence],
-                               "events": [(e["program_number"], e["kind"], e["url"], e["confirmed"]) for e in events],
-                               **({"odds_sources": odds_src} if since else {})})
+                               "events": [(e["program_number"], e["kind"], e["url"], e["confirmed"]) for e in events]})
     return {"race": race, "selection": sel, "runners": runner_rows, "wagers": wagers, "p": p, "q": q,
             "progs": progs, "pace": pace, "inputs_hash": inputs_hash,
             "data_notes": {"unavailable": unavailable, "odds_basis": "live" if market is live_odds else
@@ -129,12 +155,78 @@ def analyze_race(db: Database, h, model_version: str, model, artifact: dict, rac
                            "news_events": news_events.as_notes(events)}}
 
 
-def record(db: Database, model_version: str, a: dict, reason: str) -> int | None:
-    """Append a prediction snapshot (skipped when inputs are unchanged)."""
+PROB_STEP = 0.01      # a win probability moving by 1 point or more is a new view of the race
+NEAR_POST = 16        # minutes: inside this, the stored view is kept no older than STALE_MIN
+STALE_MIN = 10
+SELECTION_KEYS = ("top1", "top2", "top3", "most_likely", "value_pick", "dark_horse", "decision", "confidence")
+
+
+def last_snapshots(db: Database, race_ids: list[str]) -> dict[str, dict]:
+    """The latest stored snapshot of each race, with its probabilities and wagers."""
+    out: dict[str, dict] = {}
+    for i in range(0, len(race_ids), 90):
+        chunk = race_ids[i:i + 90]
+        marks = ",".join("?" for _ in chunk)
+        rows = db.query(f"SELECT p.* FROM predictions p JOIN (SELECT race_id, MAX(prediction_id) AS id FROM predictions "
+                        f"WHERE race_id IN ({marks}) GROUP BY race_id) m ON p.prediction_id=m.id", chunk)
+        for r in rows:
+            out[r["race_id"]] = {"row": r, "probs": {}, "wagers": set()}
+        ids = [r["prediction_id"] for r in rows]
+        if not ids:
+            continue
+        marks = ",".join("?" for _ in ids)
+        by_id = {r["prediction_id"]: r["race_id"] for r in rows}
+        for r in db.query(f"SELECT prediction_id, program_number, win_prob FROM prediction_runners "
+                          f"WHERE prediction_id IN ({marks})", ids):
+            out[by_id[r["prediction_id"]]]["probs"][r["program_number"]] = r["win_prob"]
+        for r in db.query(f"SELECT prediction_id, wager_type, selection FROM wagers WHERE prediction_id IN ({marks})", ids):
+            out[by_id[r["prediction_id"]]]["wagers"].add((r["wager_type"], r["selection"]))
+    return out
+
+
+def material_change(a: dict, last: dict | None, now: str | None = None, prob_step: float = PROB_STEP) -> str | None:
+    """Why this analysis is worth storing as a new snapshot, or None when it says what the
+    stored one already says. Every analysis is still computed fresh; this only avoids
+    writing identical opinions again."""
+    if not last:
+        return "first"
+    row = last["row"]
+    if row.get("inputs_hash") != a["inputs_hash"]:
+        return "inputs"
+    s = a["selection"]
+    if any((s.get(k) or None) != (row.get(k) or None) for k in SELECTION_KEYS):
+        return "selection"
+    if {(w["wager_type"], w["selection"]) for w in a["wagers"]} != last["wagers"]:
+        return "wagers"
+    notes = row.get("data_notes")
+    try:
+        notes = json.loads(notes) if isinstance(notes, str) else (notes or {})
+    except ValueError:
+        notes = {}
+    if notes.get("odds_basis") != a["data_notes"].get("odds_basis"):
+        return "odds_basis"
+    if {w["selection"] for w in notes.get("watch") or []} != {w["selection"] for w in a["data_notes"].get("watch") or []}:
+        return "watch"
+    probs = {r["program_number"]: r["win_prob"] for r in a["runners"]}
+    if set(probs) != set(last["probs"]) or any(abs(probs[k] - (last["probs"][k] or 0)) >= prob_step for k in probs):
+        return "probabilities"
+    now = now or now_iso()
+    post = a["race"].get("post_time")
+    if post and row.get("created_at") and a["data_notes"].get("odds_basis") == "live":
+        to_post = (parse_iso(post) - parse_iso(now)).total_seconds() / 60
+        age = (parse_iso(now) - parse_iso(row["created_at"])).total_seconds() / 60
+        if 0 < to_post <= NEAR_POST and age >= STALE_MIN:
+            return "pre_post_refresh"
+    return None
+
+
+def record(db: Database, model_version: str, a: dict, reason: str, last: dict | None = None,
+           checked: bool = False, prob_step: float = PROB_STEP) -> int | None:
+    """Append a prediction snapshot when it says something new (``material_change``)."""
     race = a["race"]
-    last = db.one("SELECT inputs_hash FROM predictions WHERE race_id=? ORDER BY prediction_id DESC LIMIT 1",
-                  [race["race_id"]])
-    if last and last["inputs_hash"] == a["inputs_hash"]:
+    if not checked:
+        last = last_snapshots(db, [race["race_id"]]).get(race["race_id"])
+    if material_change(a, last, prob_step=prob_step) is None:
         return None
     s = a["selection"]
     try:
@@ -184,7 +276,7 @@ def _pool_legs(race: dict, races_by_num: dict[int, dict]) -> list[tuple[str, lis
 
 
 def predict_date(db: Database, race_date: str, changed: dict[str, list[str]] | None = None,
-                 only_changed: bool = False) -> dict:
+                 only_changed: bool = False, fresh: dict | None = None, scope: dict | None = None) -> dict:
     """Analyze every upcoming race on ``race_date``; record new snapshots."""
     now = now_iso()
     version, model, row = champion(db)
@@ -201,7 +293,7 @@ def predict_date(db: Database, race_date: str, changed: dict[str, list[str]] | N
     for race in races:
         if only_changed and changed is not None and race["race_id"] not in changed:
             continue
-        a = analyze_race(db, h, version, model, artifact, race, runners[race["race_id"]])
+        a = analyze_race(db, h, version, model, artifact, race, runners[race["race_id"]], fresh)
         if a:
             analyses[race["race_id"]] = a
     # multi-race tickets: attach to the first leg's snapshot
@@ -216,7 +308,7 @@ def predict_date(db: Database, race_date: str, changed: dict[str, list[str]] | N
             leg_data = []
             for lr in legs:
                 la = analyses.get(lr["race_id"]) or analyze_race(db, h, version, model, artifact, lr,
-                                                                  runners[lr["race_id"]])
+                                                                  runners[lr["race_id"]], fresh)
                 if not la:
                     break
                 if la["data_notes"]["odds_basis"] != "live":
@@ -227,12 +319,24 @@ def predict_date(db: Database, race_date: str, changed: dict[str, list[str]] | N
                 if t:
                     a["wagers"].append(t)
                     a["selection"]["decision"] = "play"
-    written = 0
+    # ``scope`` (quota.predict_scope) narrows what is stored when the day's write budget
+    # is tight: a race never left without a snapshot, and races near post always stored.
+    scope = scope or {}
+    within, step = scope.get("within_min"), scope.get("prob_step", PROB_STEP)
+    written, held = 0, 0
+    stored = last_snapshots(db, list(analyses))
     for rid, a in analyses.items():
+        last = stored.get(rid)
+        if within is not None and last is not None:
+            to_post = (parse_iso(a["race"]["post_time"]) - parse_iso(now)).total_seconds() / 60
+            if to_post > within:
+                held += 1
+                continue
         reasons = (changed or {}).get(rid) or ["refresh"]
-        if record(db, version, a, ",".join(reasons)) is not None:
+        if record(db, version, a, ",".join(reasons), last, checked=True, prob_step=step) is not None:
             written += 1
-    return {"model_version": version, "races_analyzed": len(analyses), "snapshots_written": written}
+    return {"model_version": version, "races_analyzed": len(analyses), "snapshots_written": written,
+            "unchanged_not_stored": len(analyses) - written - held, "held_for_quota": held}
 
 
 def lock_due(db: Database) -> int:

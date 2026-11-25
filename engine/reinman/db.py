@@ -24,6 +24,10 @@ def schema_sql() -> str:
 
 class Database:
     max_params = 100  # D1 bound-parameter limit per statement
+    # Rows written so far by this connection. D1: Cloudflare's own meta.rows_written
+    # (index writes included, the number the free tier is billed on). SQLite: rows
+    # changed (a test stand-in; it does not count index writes).
+    rows_written = 0
 
     def query(self, sql: str, params: Sequence[Any] = ()) -> list[dict]:
         raise NotImplementedError
@@ -75,8 +79,67 @@ class Database:
             "UPDATE SET " + ",".join(f"{c}=excluded.{c}" for c in upd) if upd else "NOTHING")
         return self.insert_many(table, rows, conflict=conflict)
 
+    def sync(self, table: str, rows: Iterable[dict], key: Sequence[str], existing: dict | None = None,
+             ignore: Sequence[str] = ("updated_at",)) -> dict:
+        """Write only what changed. New rows are inserted; for existing rows only the
+        columns whose values differ are updated (so unchanged rows cost no writes and an
+        indexed column is only rewritten when it really changed). ``ignore`` columns
+        never trigger a write on their own but are refreshed when the row is written.
+        ``existing`` maps key tuples to stored rows; when omitted they are read here."""
+        rows = list(rows)
+        if not rows:
+            return {"inserted": 0, "updated": 0, "unchanged": 0}
+        keyof = lambda r: tuple(r[k] for k in key)  # noqa: E731
+        if existing is None:
+            existing = {}
+            cols = " AND ".join(f"{k}=?" for k in key)
+            for r in rows:
+                old = self.one(f"SELECT * FROM {table} WHERE {cols}", [r[k] for k in key])
+                if old:
+                    existing[keyof(r)] = old
+        new, groups, same = [], {}, 0
+        for r in rows:
+            old = existing.get(keyof(r))
+            if old is None:
+                new.append(r)
+                continue
+            diff = tuple(c for c in r if c not in key and c not in ignore and not same_value(r[c], old.get(c)))
+            if not diff:
+                same += 1
+                continue
+            cols = diff + tuple(c for c in ignore if c in r)
+            groups.setdefault(cols, []).append(r)
+        if new:
+            self.insert_many(table, new)
+        for cols, group in groups.items():
+            # The full row is offered (NOT NULL checks run before the conflict) but only
+            # the changed columns are set.
+            self.insert_many(table, [{c: r.get(c) for c in group[0]} for r in group],
+                             conflict=f"ON CONFLICT({','.join(key)}) DO UPDATE SET " +
+                             ",".join(f"{c}=excluded.{c}" for c in cols))
+        return {"inserted": len(new), "updated": sum(len(g) for g in groups.values()), "unchanged": same}
+
     def migrate(self) -> None:
         self.executescript(schema_sql())
+
+
+def same_value(a: Any, b: Any) -> bool:
+    """Equality as stored: JSON text compared as data, numbers with float tolerance."""
+    a, b = _coerce(a), b
+    if a is None or b is None:
+        return a is None and b is None
+    if isinstance(a, str) and isinstance(b, str):
+        if a == b:
+            return True
+        if a[:1] in "{[" and b[:1] in "{[":
+            try:
+                return json.loads(a) == json.loads(b)
+            except ValueError:
+                return False
+        return False
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return abs(float(a) - float(b)) <= 1e-9 * max(1.0, abs(float(a)))
+    return a == b
 
 
 def _coerce(v: Any) -> Any:
@@ -100,10 +163,15 @@ class SQLiteDatabase(Database):
         self.conn.execute("PRAGMA journal_mode=WAL") if self.path != ":memory:" else None
 
     def query(self, sql, params=()):
-        return [dict(r) for r in self.conn.execute(sql, list(params)).fetchall()]
+        before = self.conn.total_changes
+        rows = [dict(r) for r in self.conn.execute(sql, list(params)).fetchall()]
+        self.rows_written += self.conn.total_changes - before
+        return rows
 
     def execute(self, sql, params=()):
+        before = self.conn.total_changes
         cur = self.conn.execute(sql, list(params))
+        self.rows_written += self.conn.total_changes - before
         return cur.lastrowid
 
     def executescript(self, sql):
@@ -129,6 +197,8 @@ class D1Database(Database):
                     payload = json.loads(r.read())
                 if not payload.get("success"):
                     raise RuntimeError(f"D1 error: {payload.get('errors')}")
+                for res in payload["result"] or []:
+                    self.rows_written += int((res.get("meta") or {}).get("rows_written") or 0)
                 return payload["result"]
             except urllib.error.HTTPError as e:
                 msg = e.read().decode(errors="replace")[:500]

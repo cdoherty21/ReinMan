@@ -26,6 +26,8 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_TOKEN }}
       D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+      # Read-only use: today's account-wide D1 rows written (engine/reinman/quota.py).
+      CLOUDFLARE_ANALYTICS_TOKEN: ${{ secrets.CLOUDFLARE_ANALYTICS_TOKEN || secrets.CLOUDFLARE_DEPLOY_TOKEN }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6

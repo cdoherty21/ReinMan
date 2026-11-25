@@ -31,3 +31,9 @@ These branches are kept (not deleted) because they are the only record of what r
 | When (UTC) | Commit | Workflow run | What it did |
 |---|---|---|---|
 | 13:28 | `1cd7edb` | reinman-maintenance #1 (`canonicalize-people`) | Rewrote stored `runners.jockey_id` / `trainer_id` from the names with `util.person_key` (surname + first initial), so differently spelled names of one person share an id. Updated 333 jockey name spellings (307 distinct jockey ids afterwards) and 636 trainer name spellings (523 distinct trainer ids afterwards). Names, results and picks were not changed. |
+
+## 2026-11-25 — D1 write budget (from `main`)
+
+| When (UTC) | Commit | Workflow | What it did |
+|---|---|---|---|
+| ~18:15 | `claude/d1-efficiency` merge | reinman-deploy (migration `0101_write_budget`) | Added `job_runs.rows_written`. Dropped the unused indexes `idx_runners_horse`, `idx_runners_jockey`, `idx_runners_trainer`. No rows were changed or removed, and the indexes can be recreated at any time. Cloudflare reported 76,648 rows written by 17:56 UTC that day (49,000 the day before); see docs/D1_BUDGET.md. |

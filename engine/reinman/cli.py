@@ -1,4 +1,5 @@
-"""Rein Man command line. Every job is logged to ``job_runs``.
+"""Rein Man command line. Every job is logged to ``job_runs`` with the D1 rows it wrote;
+every write path respects the daily write budget (``quota``, docs/D1_BUDGET.md).
 
     reinman init                     create schema (SQLite) and register the baseline model
     reinman monitor                  ingest today's cards/changes/results, re-predict, lock, grade, stats
@@ -27,7 +28,7 @@ import traceback
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from . import backtest, documents, grading, ingest, news, news_events, performance, predict, schedule, train
+from . import backtest, documents, grading, ingest, news, news_events, performance, predict, quota, schedule, train
 from .db import Database, SQLiteDatabase, connect
 from .registry import ensure_baseline
 from .sources import configured_sources, get_source
@@ -47,28 +48,68 @@ def _shift(d: str, n: int) -> str:
     return (datetime.fromisoformat(d) + timedelta(days=n)).date().isoformat()
 
 
-def job(db: Database, name: str, fn, *a, **k):
-    jid = db.insert("job_runs", {"job": name, "started_at": now_iso()})
+def _log_job(db: Database, name: str, started: str, status: str, details: str, rows: int) -> None:
+    row = {"job": name, "started_at": started, "finished_at": now_iso(), "status": status, "details": details}
+    try:
+        db.insert("job_runs", {**row, "rows_written": rows})
+    except Exception as error:  # noqa: BLE001 — job_runs.rows_written arrives with migration 0101
+        if "rows_written" not in str(error):
+            raise
+        db.insert("job_runs", row)
+
+
+def job(db: Database, name: str, fn, *a, quiet: bool = False, **k):
+    """Run one step and log it as a single job_runs row (status, details and the D1 rows
+    it wrote). ``quiet`` steps are logged only when they wrote something or failed; the
+    monitor's own summary row records the rest."""
+    started, before = now_iso(), db.rows_written
     try:
         out = fn(*a, **k)
-        db.execute("UPDATE job_runs SET finished_at=?, status='ok', details=? WHERE id=?",
-                   [now_iso(), json.dumps(out, default=str)[:4000], jid])
-        log.info("%s: %s", name, out)
-        return out
     except Exception as e:  # noqa: BLE001
-        db.execute("UPDATE job_runs SET finished_at=?, status='error', details=? WHERE id=?",
-                   [now_iso(), (traceback.format_exc())[-4000:], jid])
+        _log_job(db, name, started, "error", traceback.format_exc()[-4000:], db.rows_written - before)
         log.error("%s failed: %s", name, e)
         raise
+    rows = db.rows_written - before
+    if not quiet or rows:
+        _log_job(db, name, started, "ok", json.dumps(out, default=str)[:4000], rows)
+    log.info("%s: %s", name, out)
+    return out
 
 
-def do_ingest(db: Database, race_date: str, sources=None) -> dict:
+def deferred(what: str, s: dict) -> dict:
+    return {"deferred": what, "quota_level": s["level"], "quota_pct": s["pct"], "resumes": "next run below the level"}
+
+
+def stats_stale(db: Database) -> bool:
+    last = db.scalar("SELECT computed_at FROM stats_cache WHERE key='overall'")
+    graded = db.scalar("SELECT MAX(graded_at) FROM grades")
+    return bool(graded) and (not last or graded > last)
+
+
+def report_quota(s: dict) -> None:
+    """Expose the level to GitHub Actions (outputs, summary, annotations) — no DB write."""
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a") as fh:
+            fh.write(f"quota_level={s['level']}\nquota_pct={s['pct']}\n")
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a") as fh:
+            fh.write(f"D1 rows written today: {s['rows_written']:,} of {s['limit']:,} ({s['pct']}%), "
+                     f"level **{s['level']}** — {s['source']}\n")
+    if quota.RANK[s["level"]] >= quota.RANK["defer"]:
+        print(f"::warning title=D1 write budget::{s['pct']}% of today's free-tier writes used "
+              f"({s['level']}); non-essential writes are deferred until 00:00 UTC. Source: {s['source']}")
+
+
+def do_ingest(db: Database, race_date: str, sources=None, fresh: dict | None = None) -> dict:
+    """``fresh`` receives this run's full tote read for the predictions that follow."""
     changed: dict[str, list[str]] = {}
     meets = 0
     for src in configured_sources() if sources is None else sources:
         for meet in src.meets(race_date):
             card = src.card(meet)
-            changed.update(ingest.store_card(db, card, src.name))
+            changed.update(ingest.store_card(db, card, src.name, fresh, far_move=quota.odds_far_move(db)))
             meets += 1
     weather_supplement(db, race_date)
     return {"date": race_date, "meets": meets, "changed_races": changed}
@@ -170,50 +211,80 @@ def source_check(race_date: str) -> dict:
 
 def monitor(db: Database) -> dict:
     d = today()
+    started, before = now_iso(), db.rows_written
+    q = quota.status(db, refresh=True)
+    report_quota(q)
     sources = automatic_sources(db)
     free = any(src.name == "puntersedge" for src in sources)
     # Free board reads are aimed just before posts (schedule.board_due); other sources
     # are read on every run.
     read, why = schedule.board_due(db) if free else (True, "")
+    fresh: dict = {}
     if not read:
         out = {"ingest": {"changed_races": {}, "skipped": why}}
     else:
-        out = {"ingest": job(db, "ingest", do_ingest, db, d, sources)}
+        out = {"ingest": job(db, "ingest", do_ingest, db, d, sources, fresh)}
         if why:
             out["ingest"]["board"] = why
     # PuntersEdge results wait for the daily job (4 reads a day); OTB fills in during the day.
     live = [src for src in sources if src.name != "puntersedge"] if free else sources
-    out["results"] = (job(db, "results", do_results, db, d, live) if live else
+    out["results"] = (job(db, "results", do_results, db, d, live, quiet=True) if live else
                       {"official": 0, "deferred_to": "daily"})
-    out["grade_pre"] = job(db, "lock", predict.lock_due, db)
-    out["documents"] = job(db, "documents", documents.process_pending, db)
-    out["news"] = job(db, "news", news.refresh, db)
-    out["news_events"] = job(db, "news_events", news_events.refresh, db, d)
-    out["predict"] = job(db, "predict", predict.predict_date, db, d, out["ingest"]["changed_races"])
-    out["grade"] = job(db, "grade", grading.grade_all, db)
-    if out["results"]["official"] or out["grade"]["predictions_graded"]:
-        out["stats"] = job(db, "stats", performance.refresh_stats, db)
+    out["grade_pre"] = job(db, "lock", predict.lock_due, db, quiet=True)
+    out["documents"] = (job(db, "documents", documents.process_pending, db, quiet=True)
+                        if quota.may(db, "standard") else deferred("documents", quota.status(db)))
+    out["news"] = (job(db, "news", news.refresh, db, quiet=True)
+                   if quota.may(db, "background") else deferred("news poll", quota.status(db)))
+    out["news_events"] = (job(db, "news_events", news_events.refresh, db, d, quiet=True)
+                          if quota.may(db, "standard") else deferred("news events", quota.status(db)))
+    out["predict"] = job(db, "predict", predict.predict_date, db, d, out["ingest"]["changed_races"], fresh=fresh,
+                         scope=quota.predict_scope(db), quiet=True)
+    out["grade"] = job(db, "grade", grading.grade_all, db, quiet=True)
+    if out["results"]["official"] or out["grade"]["predictions_graded"] or stats_stale(db):
+        out["stats"] = (job(db, "stats", performance.refresh_stats, db, quiet=True)
+                        if quota.may(db, "background") else deferred("stats refresh", quota.status(db)))
+    q = quota.status(db)
+    out["quota"] = q
+    _log_job(db, "monitor", started, "ok", json.dumps(out, default=str)[:4000], db.rows_written - before)
     return out
 
 
 def daily(db: Database) -> dict:
     d = today()
     out = {}
+    q = quota.status(db, refresh=True)
+    report_quota(q)
     sources = automatic_sources(db)
     for day in (_shift(d, -1), d):
         out[f"results_{day}"] = job(db, "results", do_results, db, day, sources)
+    fresh: dict = {}
     for day in (d, _shift(d, 1)):
-        out[f"ingest_{day}"] = job(db, "ingest", do_ingest, db, day, sources)
-    out["documents"] = job(db, "documents", documents.process_pending, db)
-    out["news"] = job(db, "news", news.refresh, db)
+        out[f"ingest_{day}"] = job(db, "ingest", do_ingest, db, day, sources, fresh)
+    out["documents"] = (job(db, "documents", documents.process_pending, db)
+                        if quota.may(db, "standard") else deferred("documents", quota.status(db)))
+    out["news"] = (job(db, "news", news.refresh, db)
+                   if quota.may(db, "background") else deferred("news poll", quota.status(db)))
     for day in (d, _shift(d, 1)):
-        out[f"news_events_{day}"] = job(db, "news_events", news_events.refresh, db, day)
+        out[f"news_events_{day}"] = (job(db, "news_events", news_events.refresh, db, day)
+                                     if quota.may(db, "standard") else deferred("news events", quota.status(db)))
     for day in (d, _shift(d, 1)):
-        out[f"predict_{day}"] = job(db, "predict", predict.predict_date, db, day)
+        out[f"predict_{day}"] = job(db, "predict", predict.predict_date, db, day, fresh=fresh,
+                                    scope=quota.predict_scope(db))
     out["lock"] = job(db, "lock", predict.lock_due, db)
     out["grade"] = job(db, "grade", grading.grade_all, db)
-    out["stats"] = job(db, "stats", performance.refresh_stats, db)
+    out["stats"] = (job(db, "stats", performance.refresh_stats, db)
+                    if quota.may(db, "background") else deferred("stats refresh", quota.status(db)))
+    out["quota"] = quota.status(db)
     return out
+
+
+def bulk(db: Database, name: str, fn):
+    """Bulk work (imports, backfills, maintenance, training) waits at pause_bulk and above."""
+    refusal = quota.guard_bulk(db, name)
+    if refusal:
+        report_quota(refusal["quota"])
+        return refusal
+    return fn()
 
 
 def ran_recently(db: Database, job_name: str, hours: float) -> bool:
@@ -348,7 +419,8 @@ def main(argv=None) -> int:
     fn = {
         "monitor": lambda: monitor(db),
         "news": lambda: job(db, "news", news.refresh, db),
-        "canonicalize-people": lambda: job(db, "canonicalize_people", canonicalize_people, db),
+        "canonicalize-people": lambda: bulk(db, "canonicalize-people",
+                                            lambda: job(db, "canonicalize_people", canonicalize_people, db)),
         "daily": lambda: guarded(db, "daily_cycle", 12, a.force, lambda: daily(db)),
         "documents-ready": lambda: documents_ready(db),
         "inspect-documents": lambda: inspect_documents(db, a.id, a.grep, a.max_chars),
@@ -356,13 +428,15 @@ def main(argv=None) -> int:
         "results": lambda: job(db, "results", do_results, db, d),
         "predict": lambda: job(db, "predict", predict.predict_date, db, d),
         "lock": lambda: job(db, "lock", predict.lock_due, db),
-        "documents": lambda: job(db, "documents", documents.process_queue, db, getattr(a, "rescan", False)),
+        "documents": lambda: (job(db, "documents", documents.process_queue, db, getattr(a, "rescan", False))
+                              if quota.may(db, "standard") else deferred("documents", quota.status(db))),
         "grade": lambda: job(db, "grade", grading.grade_all, db),
         "stats": lambda: job(db, "stats", performance.refresh_stats, db),
-        "train": lambda: guarded(db, "train", 24, a.force, lambda: train.train_and_maybe_promote(db)),
-        "backtest": lambda: job(db, "backtest", backtest.run, db),
-        "backfill": lambda: backfill(db, a.start, a.end),
-        "import": lambda: job(db, "import", do_import, db, a.path),
+        "train": lambda: bulk(db, "train", lambda: guarded(db, "train", 24, a.force,
+                                                           lambda: train.train_and_maybe_promote(db))),
+        "backtest": lambda: bulk(db, "backtest", lambda: job(db, "backtest", backtest.run, db)),
+        "backfill": lambda: bulk(db, "backfill", lambda: backfill(db, a.start, a.end)),
+        "import": lambda: bulk(db, "import", lambda: job(db, "import", do_import, db, a.path)),
         "import-otb": lambda: job(db, "import_otb", do_import_otb, db, a.path, a.track, d, a.race, a.evening),
         "source": lambda: get_source(a.name).capabilities,
     }[a.cmd]
