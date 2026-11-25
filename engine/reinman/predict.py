@@ -115,6 +115,7 @@ def analyze_race(db: Database, h, model_version: str, model, artifact: dict, rac
                                "odds": np.round(np.nan_to_num(odds, nan=-1), 3).tolist(), "progs": progs,
                                "cond": race.get("track_condition"), "surface": race.get("surface"),
                                "news": relevant_news,
+                               "horse_profiles": [e.get("horse_profile") for e in evidence],
                                **({"odds_sources": odds_src} if since else {})})
     return {"race": race, "selection": sel, "runners": runner_rows, "wagers": wagers, "p": p, "q": q,
             "progs": progs, "pace": pace, "inputs_hash": inputs_hash,
@@ -242,4 +243,5 @@ def lock_due(db: Database) -> int:
             db.insert("locks", {"race_id": d["race_id"], "prediction_id": p["prediction_id"]}, verb="INSERT OR IGNORE")
             n += 1
     return n
+
 

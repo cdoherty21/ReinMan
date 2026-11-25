@@ -474,7 +474,7 @@ def process_pending(db: Database, limit: int = 20, touched: set[str] | None = No
                 summary = scan(db, doc, text)
                 summary["race_cards_imported"] = imported
                 summary["historical_scan_version"] = 1
-                pp = past_performances.apply(db, text, sorted(set(summary["races_linked"]) | set(imported)))
+                pp = past_performances.apply(db, text, sorted(set(summary["races_linked"]) | set(imported)), doc["id"])
                 if pp["horses"]:
                     summary["past_performances"] = pp
                 if not summary["races_linked"] and not imported:

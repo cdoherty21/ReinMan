@@ -179,7 +179,7 @@ def extract(text: str, runners: list[dict]) -> dict[tuple[str, str], list[dict]]
     return found
 
 
-def apply(db: Database, text: str, race_ids: list[str]) -> dict:
+def apply(db: Database, text: str, race_ids: list[str], document_id: int | None = None) -> dict:
     """Attach past performances from ``text`` to the runners of ``race_ids``."""
     if not race_ids:
         return {"horses": 0, "lines": 0}
@@ -195,7 +195,8 @@ def apply(db: Database, text: str, race_ids: list[str]) -> dict:
         row = next(r for r in rows if r["race_id"] == rid and r["program_number"] == prog)
         extra = json.loads(row["extra"]) if row.get("extra") else {}
         have = {(p.get("date"), p.get("track"), p.get("race_number")) for p in extra.get("past_performances") or []}
-        new = [p for p in pps if (p["date"], p["track"], p["race_number"]) not in have]
+        new = [dict(p, document_id=document_id) for p in pps
+               if (p["date"], p["track"], p["race_number"]) not in have]
         if not new:
             continue
         merged = sorted((extra.get("past_performances") or []) + new, key=lambda p: p["date"], reverse=True)
@@ -204,3 +205,4 @@ def apply(db: Database, text: str, race_ids: list[str]) -> dict:
                    [json.dumps(extra), rid, prog])
         lines += len(new)
     return {"horses": len(found), "lines": lines}
+

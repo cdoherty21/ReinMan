@@ -197,7 +197,7 @@ export function Race({ id }: { id: string }) {
                                 <div>
                                   <h4>Evidence</h4>
                                   <ul className="factors">
-                                    {x.factors.map((f, i) => <li key={i} className={f.startsWith("+") ? "pos" : f.startsWith("−") ? "neg" : ""}>{f}</li>)}
+                                    {x.factors.filter((f) => !f.startsWith("Horse profile · ")).map((f, i) => <li key={i} className={f.startsWith("+") ? "pos" : f.startsWith("−") ? "neg" : ""}>{f}</li>)}
                                   </ul>
                                 </div>
                                 <div>
@@ -210,6 +210,16 @@ export function Race({ id }: { id: string }) {
                                   </p>
                                 </div>
                               </div>
+                              <section className="card compact">
+                                <h4>Horse profile</h4>
+                                {x.factors.some((f) => f.startsWith("Horse profile · ")) ? (
+                                  <ul className="factors">
+                                    {x.factors.filter((f) => f.startsWith("Horse profile · ")).map((f, i) => (
+                                      <li key={i}>{f.slice("Horse profile · ".length)}</li>
+                                    ))}
+                                  </ul>
+                                ) : <p className="small muted">Profile pending the next prediction refresh.</p>}
+                              </section>
                               <PastPerformances rows={pastPerformances(r)} />
                             </td>
                           </tr>
@@ -391,3 +401,4 @@ export function Race({ id }: { id: string }) {
 function Bar({ v }: { v: number }) {
   return <span className="pbar" aria-hidden="true"><span style={{ width: `${Math.min(100, v * 100 / 0.6)}%` }} /></span>;
 }
+
