@@ -440,3 +440,49 @@ table.data td a { font-weight: 550; }
 .horse-selection { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .15rem; }
 .scratched .horse-number { opacity: .65; text-decoration: line-through; }
 @media (forced-colors: active) { .horse-number { border: 1px solid CanvasText; } }
+
+/* Keep wide racing data within its own scrollable surface. */
+#root, .page, .topbar, .card, .empty, .take, .foot { min-width: 0; max-width: 100%; }
+#root, .topbar, .page { width: 100%; }
+.page { max-width: 1320px; }
+.foot { max-width: 760px; }
+.table-wrap { width: 100%; min-width: 0; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.card > .table-wrap { margin-bottom: .25rem; }
+.page-head > div, .analysis-grid > div, .bets li a > *, .entry-info { min-width: 0; }
+.pre, .doc-notes summary, .doc-notes a, .stamp, .timeline { overflow-wrap: anywhere; }
+.empty + .card { margin-top: 1rem; }
+.entries-mobile { display: none; }
+
+@media (max-width: 640px) {
+  .entries-desktop { display: none; }
+  .entries-mobile { display: block; margin: 0; padding: 0; list-style: none; }
+  .entries-mobile li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: .65rem;
+    padding: .85rem 0;
+    border-top: 1px solid var(--line);
+  }
+  .entries-mobile li:first-child { border-top: 0; padding-top: .15rem; }
+  .entries-mobile li:last-child { padding-bottom: .15rem; }
+  .entries-mobile .horse-number { margin-top: .1rem; }
+  .entry-info > strong { display: block; color: var(--green-800); line-height: 1.35; overflow-wrap: anywhere; }
+  .entry-connections { display: flex; flex-wrap: wrap; gap: .25rem .85rem; margin: .4rem 0 0; }
+  .entry-connections div { flex: 1 1 5rem; min-width: 0; }
+  .entry-connections dt { font-size: .73rem; color: var(--ink-3); }
+  .entry-connections dd { margin: 0; font-size: .82rem; line-height: 1.4; overflow-wrap: anywhere; }
+  .entry-price { display: flex; flex-direction: column; align-items: flex-end; gap: .15rem; white-space: nowrap; }
+  .entry-price strong { color: var(--green-800); font-variant-numeric: tabular-nums; }
+  .entry-price small { font-size: .72rem; color: var(--ink-3); }
+  .entries-mobile .scratched .entry-info > strong { text-decoration: line-through; }
+  .page-head h1 .muted { font-size: .72em; }
+  .page-head > div { max-width: 100%; }
+  .table-wrap table.data th, .table-wrap table.data td { padding-left: .5rem; padding-right: .5rem; }
+  table.form .pbar, table.form .rm-mark { display: none; }
+  table.form td.horse { min-width: 7rem; overflow-wrap: anywhere; }
+  table.form td.horse .tag { margin: .2rem .2rem 0 0; }
+  .filters label, .upload-form label, .upload-form input, .inline-form input, .inline-form select { max-width: 100%; }
+  .doc-notes details { padding: .4rem 0; border-bottom: 1px solid var(--line); }
+  .doc-notes details:last-child { border-bottom: 0; }
+}
