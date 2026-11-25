@@ -96,6 +96,9 @@ def runner_factors(i: int, contrib: np.ndarray | None, evidence: dict, X: np.nda
     if ev.get("archive_wins"):
         lines.append("• historical winner archive at this track: " + ", ".join(
             f"{role} {count} recorded wins" for role, count in ev["archive_wins"].items()))
+    from .horse_profiles import evidence as profile_evidence
+    if "horse_profile" in ev:
+        lines.extend("Horse profile · " + line for line in profile_evidence(ev["horse_profile"]))
     if ev.get("additional_pp_starts"):
         lines.append(f"• {ev['additional_pp_starts']} additional starts from uploaded past performances or charts")
     if ev.get("pedigree"):

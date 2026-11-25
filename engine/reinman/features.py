@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .db import Database
-from . import historical
+from . import historical, horse_profiles
 from .ingest import canonical_people
 from .util import days_between, norm_name
 from .sources.tracks import track_info
@@ -55,6 +55,7 @@ FEATURES = [
     "travel_miles_log", "track_switch", "pp_days_since_work", "pp_works_14d",
     "beyer_latest", "beyer_best3", "beyer_trend", "trainer_snapshot_win", "jockey_snapshot_win",
     "archive_horse_wins_log", "archive_trainer_wins_log", "archive_jockey_wins_log", "archive_sire_surface_wins_log",
+    *horse_profiles.FEATURES,
 ]
 RACE_CONSTANT = {"field_size", "off_track", "is_turf", "is_route"}
 RICH = {f for f in FEATURES if f.startswith("pp_")}
@@ -433,6 +434,10 @@ def featurize_race(h: HistoryBuilder, race: dict, runners: list[dict]) -> tuple[
                                                    h.chart.get(norm_name(r.get("horse_name")), []))
                       if str(p.get("date", "")) < d],
                      key=lambda p: p["date"], reverse=True)
+        profile, profile_features = horse_profiles.build(
+            program_lines + h.chart.get(norm_name(r.get("horse_name")), []), race, r)
+        ev["horse_profile"] = profile
+        f.update(profile_features)
         if pps:
             # Imported programs and standalone charts contain real prior starts even
             # when the same races were never imported as complete cards.
@@ -512,6 +517,14 @@ def featurize_race(h: HistoryBuilder, race: dict, runners: list[dict]) -> tuple[
             ranked = [w["rank"] / w["of"] for w in works if w.get("rank") and w.get("of")]
             if ranked:
                 f["pp_best_work_pct"] = float(min(ranked))
+        profile["current_context"] = {
+            "trainer": r.get("trainer_name"), "jockey": r.get("jockey_name"),
+            "sire": pedigree.get("sire"), "dam": pedigree.get("dam"),
+            "equipment": r.get("equipment"), "medication": r.get("medication"),
+            "previous_track": ev.get("previous_track"), "travel_miles": ev.get("travel_miles"),
+            "rest_days": ev.get("rest_days"), "workouts_30d": ev.get("workouts_30d"),
+            "last_work_date": ev.get("last_work_date"),
+        }
         early_positions.append(f["pp_early_pos"])
         rows.append(f)
         evidence.append(ev)

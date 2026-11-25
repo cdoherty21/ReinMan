@@ -278,6 +278,7 @@ def load_lines(db: Database) -> dict[str, list[dict]]:
     """horse_key -> chart lines, for the feature builder (which filters by date)."""
     ensure_table(db)
     out: dict[str, list[dict]] = {}
-    for row in db.query("SELECT horse_key, data FROM chart_lines"):
-        out.setdefault(row["horse_key"], []).append(json.loads(row["data"]))
+    for row in db.query("SELECT horse_key, data, document_id FROM chart_lines"):
+        out.setdefault(row["horse_key"], []).append(dict(json.loads(row["data"]), document_id=row["document_id"]))
     return out
+
