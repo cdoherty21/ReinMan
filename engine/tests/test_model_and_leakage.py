@@ -115,3 +115,21 @@ def test_end_to_end_with_trained_champion(world_db, tmp_path):
         assert any(f.startswith("+ ") for r in pr for f in json.loads(r["factors"]))
         assert abs(sum(r["win_prob"] for r in pr) - 1) < 1e-9
         assert all(r["place_prob"] >= r["win_prob"] and r["show_prob"] >= r["place_prob"] for r in pr)
+
+
+def test_early_candidate_learns_without_tree_model():
+    samples = []
+    rng = np.random.default_rng(11)
+    from reinman.features import RaceSample
+    for i in range(260):
+        X = np.zeros((5, len(FEATURES)))
+        X[:, FEATURES.index("pp_last_speed")] = rng.normal(size=5)
+        order = np.argsort(-X[:, FEATURES.index("pp_last_speed")])
+        finish = np.empty(5)
+        finish[order] = np.arange(1, 6)
+        runners = [{"ml_odds": None, "live_odds": None} for _ in finish]
+        samples.append(RaceSample(str(i), "2025-01-01", "FL", {}, runners, X, [], finish))
+    model, artifact = train.fit_candidate(samples[:200], samples[200:])
+    assert model.gbm is None
+    restored = load_model(artifact)
+    assert train.evaluate(restored, samples[200:])["top_pick_win_pct"] > 0.9

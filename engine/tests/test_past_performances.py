@@ -92,3 +92,19 @@ def test_features_switch_on(db):
     assert np.isnan(col["pp_last_speed"][2])                   # no document -> unavailable, not guessed
     assert col["pp_last_trouble"][1] == 1.0                    # Rocked Out was bothered last out
     assert col["pp_early_pos"][1] < col["pp_early_pos"][0]     # Rocked Out runs closer to the pace
+
+
+def test_imported_form_survives_sparse_card_refresh(db):
+    card = _card("FL", ["Ragtime Prankster", "Rocked Out", "Im Gunna"])
+    ingest.store_card(db, card, "test")
+    ppr.apply(db, PROGRAM, ["FL-20261124-1"])
+    card["races"][0]["runners"][0]["extra"] = {"workouts": [{"date": "2026-11-20"}]}
+    ingest.store_card(db, card, "test")
+    race = db.one("SELECT * FROM races")
+    runners = db.query("SELECT * FROM runners ORDER BY program_number")
+    X, evidence = featurize_race(HistoryBuilder(), race, runners)
+    assert X[0, FEATURES.index("h_no_history")] == 0
+    assert X[0, FEATURES.index("h_last_itm")] == 1
+    assert evidence[0]["additional_pp_starts"] == 2
+    assert len(json.loads(runners[0]["extra"])["past_performances"]) == 2
+    assert X[2, FEATURES.index("h_no_history")] == 1

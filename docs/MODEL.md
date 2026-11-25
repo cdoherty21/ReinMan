@@ -61,3 +61,19 @@ The pipeline is verified on a **synthetic test world** (tests only): the model r
 signal beyond the morning line out-of-sample, leakage checks pass, and the gate rejects
 non-significant improvements. **No claim of profitability on real races is made.** That
 requires live, graded results over a meaningful sample — which the Performance page tracks.
+
+## Progressive learning
+
+Daily training attempts use the available official races. The first candidate is a
+strongly regularized conditional-logit model, eligible with at least 200 training,
+50 validation and 50 untouched test races across at least 10 race dates. Date-based
+splits can require more races. At 1,500 training races, the LightGBM component is
+added. Both stages must clear the existing paired log-loss and calibration promotion
+gate. Historical market input uses morning lines to avoid depending on closing odds
+that may have been recorded after post time.
+
+Uploaded program and result-chart records supplement tracked horse history, including
+prior finishes, recency, distance, track, condition and speed/pace where available.
+Records are deduplicated by horse and race date; missing positions or context remain
+unknown. Later cards cannot add past-performance records to earlier training races.
+Sparse card refreshes preserve supplemental runner data for the same horse.

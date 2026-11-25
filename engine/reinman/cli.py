@@ -322,7 +322,7 @@ def main(argv=None) -> int:
         "documents": lambda: job(db, "documents", documents.process_queue, db, getattr(a, "rescan", False)),
         "grade": lambda: job(db, "grade", grading.grade_all, db),
         "stats": lambda: job(db, "stats", performance.refresh_stats, db),
-        "train": lambda: guarded(db, "train", 24 * 6, a.force, lambda: train.train_and_maybe_promote(db)),
+        "train": lambda: guarded(db, "train", 24, a.force, lambda: train.train_and_maybe_promote(db)),
         "backtest": lambda: job(db, "backtest", backtest.run, db),
         "backfill": lambda: backfill(db, a.start, a.end),
         "import": lambda: job(db, "import", do_import, db, a.path),
