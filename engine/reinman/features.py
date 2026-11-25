@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .db import Database
+from . import historical
 from .ingest import canonical_people
 from .util import days_between, norm_name
 from .sources.tracks import track_info
@@ -53,6 +54,7 @@ FEATURES = [
     "trainer_change", "trainer_starts_30d_log", "jockey_starts_30d_log",
     "travel_miles_log", "track_switch", "pp_days_since_work", "pp_works_14d",
     "beyer_latest", "beyer_best3", "beyer_trend", "trainer_snapshot_win", "jockey_snapshot_win",
+    "archive_horse_wins_log", "archive_trainer_wins_log", "archive_jockey_wins_log", "archive_sire_surface_wins_log",
 ]
 RACE_CONSTANT = {"field_size", "off_track", "is_turf", "is_route"}
 RICH = {f for f in FEATURES if f.startswith("pp_")}
@@ -131,6 +133,7 @@ class HistoryBuilder:
     workouts: dict = field(default_factory=lambda: defaultdict(list))
     pedigrees: dict = field(default_factory=dict)
     news: list = field(default_factory=list)
+    winner_archive: historical.WinnerHistory = field(default_factory=historical.WinnerHistory)
 
     def rate(self, key, prior: float, k: float, since: str | None = None) -> float:
         c = self.cnt.get(key)
@@ -360,6 +363,18 @@ def featurize_race(h: HistoryBuilder, race: dict, runners: list[dict]) -> tuple[
                     **{k: r[k] for k in ("sire", "dam", "dam_sire") if r.get(k)}}
         if pedigree:
             ev["pedigree"] = pedigree
+        for role, identity, surface, feature in (
+            ("horse", norm_name(r.get("horse_name")), None, "archive_horse_wins_log"),
+            ("trainer", t, None, "archive_trainer_wins_log"),
+            ("jockey", j, None, "archive_jockey_wins_log"),
+            ("sire", norm_name(pedigree.get("sire")), surf, "archive_sire_surface_wins_log"),
+        ):
+            if identity:
+                count = h.winner_archive.count(trk, role, identity, d, surface)
+                if count:
+                    f[feature] = math.log1p(count)
+                    ev.setdefault("archive_wins", {})[role] = count
+
         for family, prefix in (("sire", "sire"), ("dam", "dam"), ("dam_sire", "damsire")):
             name = norm_name(pedigree.get(family))
             if not name:
@@ -580,7 +595,7 @@ def _chart_lines(db: Database) -> dict:
 
 
 def build_history(db: Database, before: str) -> HistoryBuilder:
-    h = HistoryBuilder(chart=_chart_lines(db))
+    h = HistoryBuilder(chart=_chart_lines(db), winner_archive=historical.load(db))
     races, runners, fin, _ = load_races(db, end=_sub_days(before, 1))
     for rid, race in races.items():
         h.add_programs(race, runners[rid])
@@ -592,7 +607,7 @@ def build_history(db: Database, before: str) -> HistoryBuilder:
 def build_dataset(db: Database, start: str | None = None, end: str | None = None,
                   min_field: int = 3) -> list[RaceSample]:
     """Chronological samples for official races in [start, end], features point-in-time."""
-    h = HistoryBuilder(chart=_chart_lines(db))
+    h = HistoryBuilder(chart=_chart_lines(db), winner_archive=historical.load(db))
     races, runners, fin, pay = load_races(db, end=end)
     by_date = defaultdict(list)
     for rid, race in races.items():
@@ -635,4 +650,5 @@ def data_availability(X: np.ndarray) -> dict[str, bool]:
         "trouble_notes": any_col(["pp_last_trouble"]),
         "workouts": any_col(["pp_works_30d"]),
     }
+
 

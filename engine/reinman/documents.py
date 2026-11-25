@@ -27,7 +27,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from .db import Database
-from . import charts, past_performances, programs
+from . import charts, historical, past_performances, programs
 from .document_formats import read_document
 from .document_extracts import partial_extract
 from .document_tables import table_cards
@@ -401,7 +401,11 @@ def _store_program_cards(db: Database, cards: list[dict]) -> tuple[list[str], se
 
 
 # Documents ready to scan: new uploads, plus ones that were waiting for a race card that now exists.
-_READY = ("d.status='pending' OR (d.status='waiting' AND EXISTS ("
+_READY = ("d.status='pending' OR (d.status='processed' "
+          "AND lower(d.filename) LIKE '%keeneland%csv' "
+          "AND COALESCE(json_extract(d.summary, '$.historical_scan_version'), 0)=0 "
+          "AND json_extract(d.summary, '$.message') LIKE 'No race card%') "
+          "OR (d.status='waiting' AND EXISTS ("
           "SELECT 1 FROM races r JOIN runners rn ON rn.race_id=r.race_id "
           "WHERE r.track_id=d.track_id AND r.race_date=d.race_date "
           "AND r.race_number=json_extract(d.summary, '$.waiting_for_race')))")
@@ -428,6 +432,13 @@ def process_pending(db: Database, limit: int = 20, touched: set[str] | None = No
                     raise ValueError("No readable racing text recovered. Try a clearer scan or an original program.")
                 if original and doc["chars"] != len(text):
                     _replace_text(db, doc["id"], text)
+                summary = historical.apply(db, tables, doc)
+                if summary is not None:
+                    summary["historical_scan_version"] = 1
+                    db.execute("UPDATE documents SET status='processed', processed_at=?, summary=?, error=NULL WHERE id=?",
+                               [now_iso(), json.dumps(summary), doc["id"]])
+                    done += 1
+                    continue
                 if charts.is_chart(text):
                     summary = charts.apply(db, text, doc["filename"], doc["id"])
                     if not summary["races_linked"] and not summary["chart_lines"]:
@@ -462,6 +473,7 @@ def process_pending(db: Database, limit: int = 20, touched: set[str] | None = No
                     continue
                 summary = scan(db, doc, text)
                 summary["race_cards_imported"] = imported
+                summary["historical_scan_version"] = 1
                 pp = past_performances.apply(db, text, sorted(set(summary["races_linked"]) | set(imported)))
                 if pp["horses"]:
                     summary["past_performances"] = pp
@@ -522,4 +534,5 @@ def process_queue(db: Database, rescan: bool = False) -> dict:
             for day, changes in sorted(future.items())
         )
     return total
+
 

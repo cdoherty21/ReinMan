@@ -93,6 +93,9 @@ def runner_factors(i: int, contrib: np.ndarray | None, evidence: dict, X: np.nda
             lines.append(f"• {ev['days']} days since last tracked start")
     else:
         lines.append("• no prior starts in Rein Man's database")
+    if ev.get("archive_wins"):
+        lines.append("• historical winner archive at this track: " + ", ".join(
+            f"{role} {count} recorded wins" for role, count in ev["archive_wins"].items()))
     if ev.get("additional_pp_starts"):
         lines.append(f"• {ev['additional_pp_starts']} additional starts from uploaded past performances or charts")
     if ev.get("pedigree"):
@@ -208,5 +211,6 @@ def write_take(race_key, progs, names, p, odds, odds_src, order, value, dark, fa
 
 def fair_odds(p: float) -> float:
     return max(1.0 / max(p, 1e-6) - 1.0, 0.0)
+
 
 
