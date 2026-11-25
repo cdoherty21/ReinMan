@@ -9,7 +9,7 @@ from datetime import timedelta
 import numpy as np
 
 from .config import POLICY
-from . import news, news_events
+from . import news, news_events, quota
 from .db import Database
 from .features import build_history, data_availability, featurize_race, projected_pace
 from .models import Ensemble
@@ -321,11 +321,17 @@ def predict_date(db: Database, race_date: str, changed: dict[str, list[str]] | N
                     a["selection"]["decision"] = "play"
     # ``scope`` (quota.predict_scope) narrows what is stored when the day's write budget
     # is tight: a race never left without a snapshot, and races near post always stored.
+    # An explicit scope enables quota-aware persistence. Recheck before each race
+    # because a large card can cross a budget threshold during this same run.
+    adaptive = scope is not None
     scope = scope or {}
-    within, step = scope.get("within_min"), scope.get("prob_step", PROB_STEP)
     written, held = 0, 0
     stored = last_snapshots(db, list(analyses))
     for rid, a in analyses.items():
+        current = quota.predict_scope(db) if adaptive else {}
+        limits = [v for v in (scope.get("within_min"), current.get("within_min")) if v is not None]
+        within = min(limits) if limits else None
+        step = max(scope.get("prob_step", PROB_STEP), current.get("prob_step", PROB_STEP))
         last = stored.get(rid)
         if within is not None and last is not None:
             to_post = (parse_iso(a["race"]["post_time"]) - parse_iso(now)).total_seconds() / 60

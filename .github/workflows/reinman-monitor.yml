@@ -46,10 +46,6 @@ jobs:
         run: (command -v pdftotext && command -v tesseract) || (sudo apt-get update && sudo apt-get install -y poppler-utils tesseract-ocr)
       - id: run
         run: reinman monitor
-      # Alert: a failed step here emails the repository owner (GitHub's default
-      # notification). It fires only when the day's D1 writes pass 85% of the free tier.
-      - if: steps.run.outputs.quota_level == 'pause_bulk' || steps.run.outputs.quota_level == 'emergency'
-        run: |
-          echo "::error title=D1 write budget::${{ steps.run.outputs.quota_pct }}% of today's free-tier D1 writes used (${{ steps.run.outputs.quota_level }}). Essential writes only until 00:00 UTC; see docs/D1_BUDGET.md."
-          exit 1
+      # reinman monitor emits the actual end-of-run budget as a warning and summary.
+      # Intentional quota deferral is not a failed job; real command errors still fail.
 
