@@ -27,9 +27,8 @@ log = logging.getLogger("reinman.train")
 
 
 def market_odds(s: RaceSample) -> np.ndarray | None:
-    live = np.array([r["live_odds"] if r["live_odds"] is not None else np.nan for r in s.runners], float)
-    if np.all(np.isfinite(live)):
-        return live
+    # Historical runner rows may contain closing odds updated after the race.
+    # Morning lines are the reproducible pre-race market input.
     ml = np.array([r["ml_odds"] if r["ml_odds"] is not None else np.nan for r in s.runners], float)
     return ml if np.all(np.isfinite(ml)) else None
 
@@ -78,8 +77,11 @@ def split(samples: list[RaceSample], valid_frac=0.15, test_frac=0.15):
 def fit_candidate(train: list[RaceSample], valid: list[RaceSample]) -> tuple[Ensemble, dict]:
     Xs, fs = [s.X for s in train], [s.finish for s in train]
     Xv, fv = [s.X for s in valid], [s.finish for s in valid]
-    logit = ExplodedLogit(l2=1e-3).fit(Xs, fs)
-    gbm = GBMScorer().fit(Xs, fs, Xv, fv)
+    # Begin learning with a heavily regularized, lower-variance model. Add
+    # nonlinear trees only when the training set is large enough.
+    early = len(train) < 1500
+    logit = ExplodedLogit(l2=0.05 if early else 1e-3).fit(Xs, fs)
+    gbm = None if early else GBMScorer().fit(Xs, fs, Xv, fv)
     ens = Ensemble(logit, gbm).fit_blend(Xv, fv, [market_odds(s) for s in valid])
     lam_samples = []
     for s in train[-3000:] + valid:
@@ -95,12 +97,20 @@ def fit_candidate(train: list[RaceSample], valid: list[RaceSample]) -> tuple[Ens
 
 def train_and_maybe_promote(db: Database, end: str | None = None, force_register: bool = False) -> dict:
     samples = build_dataset(db, end=end)
-    if len(samples) < POLICY.min_train_races + 2 * POLICY.min_valid_races:
+    min_train = min(POLICY.min_train_races, 200)
+    min_holdout = min(POLICY.min_valid_races, 50)
+    required = max(math.ceil(min_train / 0.70), math.ceil(min_holdout / 0.15))
+    if len(samples) < required or len({s.race_date for s in samples}) < 10:
         msg = {"status": "insufficient_data", "races": len(samples),
-               "required": POLICY.min_train_races + 2 * POLICY.min_valid_races}
+               "required": required}
         log_event(db, None, "training_skipped", msg)
         return msg
     train, valid, test = split(samples)
+    if len(train) < min_train or min(len(valid), len(test)) < min_holdout:
+        msg = {"status": "insufficient_data", "races": len(samples), "required": required,
+               "train_races": len(train), "valid_races": len(valid), "test_races": len(test)}
+        log_event(db, None, "training_skipped", msg)
+        return msg
     cand, artifact = fit_candidate(train, valid)
     champ_version, champ_model, _ = champion(db)
     cm = evaluate(cand, test)
@@ -114,7 +124,7 @@ def train_and_maybe_promote(db: Database, end: str | None = None, force_register
                    ll_diff=diff, ll_diff_ci=[lo, hi], train_races=len(train), valid_races=len(valid),
                    test_races=len(test), policy=POLICY.to_dict(),
                    logit_coefficients=dict(zip(artifact["logit"]["features"], artifact["logit"]["beta"])),
-                   feature_importance=_importance(cand))
+                   feature_importance=_importance(cand), learning_stage="regularized_logit" if cand.gbm is None else "ensemble")
     version = new_version("ensemble")
     register(db, version, "ensemble", artifact, metrics, window)
     evidence = {"ll_diff": diff, "ci": [lo, hi], "ece_candidate": cm["ece"], "ece_champion": hm["ece"],

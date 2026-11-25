@@ -93,6 +93,8 @@ def runner_factors(i: int, contrib: np.ndarray | None, evidence: dict, X: np.nda
             lines.append(f"• {ev['days']} days since last tracked start")
     else:
         lines.append("• no prior starts in Rein Man's database")
+    if ev.get("additional_pp_starts"):
+        lines.append(f"• {ev['additional_pp_starts']} additional starts from uploaded past performances or charts")
     return lines
 
 

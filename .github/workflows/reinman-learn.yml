@@ -5,12 +5,12 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: Train even if a model was trained in the last 6 days
+        description: Train even if a model was trained in the last 24 hours
         type: boolean
         default: false
-  # The Worker starts this Mondays ~5:23am ET; this later schedule is a backup.
+  # The Worker also starts learning on Mondays; this daily schedule keeps it current.
   schedule:
-    - cron: "53 10 * * 1"
+    - cron: "53 10 * * *"
 concurrency:
   group: reinman-db-writer
   cancel-in-progress: false

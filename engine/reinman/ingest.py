@@ -26,6 +26,25 @@ def upsert_track(db: Database, meet: dict) -> None:
         "updated_at": now_iso()}], key=["track_id"])
 
 
+def _merge_extra(previous: dict | None, incoming: dict | None) -> str | None:
+    old = json.loads(previous["extra"]) if previous and previous.get("extra") else {}
+    new = incoming or {}
+    merged = {**old, **{key: value for key, value in new.items() if value is not None}}
+    for key in ("past_performances", "workouts"):
+        if old.get(key) and new.get(key):
+            records = {}
+            for record in old[key] + new[key]:
+                identity = (record.get("date"), record.get("track"), record.get("race_number"))
+                if key == "workouts":
+                    identity += (record.get("distance_yards"), record.get("time"))
+                records[identity] = {**records.get(identity, {}),
+                                     **{k: v for k, v in record.items() if v is not None}}
+            merged[key] = list(records.values())
+        elif old.get(key) and not new.get(key):
+            merged[key] = old[key]
+    return json.dumps(merged) if merged else None
+
+
 def store_card(db: Database, card: dict, source: str | None = None) -> dict[str, list[str]]:
     """Insert/refresh a meet's races and runners.
 
@@ -89,8 +108,13 @@ def store_card(db: Database, card: dict, source: str | None = None) -> dict[str,
                 "medication": rn.get("medication"), "claiming": rn.get("claiming"), "ml_odds": rn.get("ml_odds"),
                 "live_odds": rn.get("live_odds"), "coupled_type": rn.get("coupled_type"),
                 "scratched": bool(rn.get("scratched")) or bool(p and p["scratched"]),
-                "extra": json.dumps(rn["extra"]) if rn.get("extra") else (p or {}).get("extra"),
+                "extra": _merge_extra(p if p and p["horse_id"] == rn["horse_id"] else None, rn.get("extra")),
                 "updated_at": now_iso()})
+            if p and p["horse_id"] == rn["horse_id"]:
+                for key in ("jockey_id", "jockey_name", "trainer_id", "trainer_name", "sire", "dam",
+                            "dam_sire", "weight", "equipment", "medication", "claiming", "ml_odds", "post_position"):
+                    if rows[-1][key] is None:
+                        rows[-1][key] = p.get(key)
             if rn.get("live_odds") is not None or rn.get("win_pool") is not None:
                 snaps.append({"race_id": rid, "program_number": rn["program_number"], "captured_at": now_iso(),
                               "live_odds": rn.get("live_odds"), "win_pool": rn.get("win_pool"),

@@ -120,6 +120,7 @@ class HistoryBuilder:
     cnt: dict = field(default_factory=lambda: defaultdict(Counter2))        # key -> Counter2
     asof: str = "9999-12-31"   # rates only use races strictly before this date
     chart: dict = field(default_factory=dict)  # horse name key -> result-chart lines (charts.py)
+    programs: dict = field(default_factory=lambda: defaultdict(list))
 
     def rate(self, key, prior: float, k: float, since: str | None = None) -> float:
         c = self.cnt.get(key)
@@ -131,6 +132,12 @@ class HistoryBuilder:
     def base_rate(self) -> float:
         w, n = self.cnt[("__all__",)].window(None, self.asof)
         return w / n if n >= 100 else 0.12
+
+    def add_programs(self, race: dict, runners: list[dict]) -> None:
+        for runner in runners:
+            for line in _parse_extra(runner).get("past_performances") or []:
+                if str(line.get("date", "")) < race["race_date"]:
+                    self.programs[runner["horse_id"]].append(line)
 
     def add_race(self, race: dict, runners: list[dict], finish: dict[str, int]) -> None:
         """Add an official race. ``finish`` maps program_number -> official position."""
@@ -219,7 +226,7 @@ def _with_chart_lines(program_lines: list[dict], chart_lines: list[dict]) -> lis
     for c in chart_lines:
         key = (c.get("date"), c.get("track"))
         if key in by_key:
-            for k in ("beaten_lengths", "call_lengths", "final_time"):
+            for k in ("beaten_lengths", "call_lengths", "final_time", "surface", "field_size", "distance_yards", "finish", "condition"):
                 if by_key[key].get(k) is None and c.get(k) is not None:
                     by_key[key][k] = c[k]
         else:
@@ -332,11 +339,51 @@ def featurize_race(h: HistoryBuilder, race: dict, runners: list[dict]) -> tuple[
 
         # ---- optional rich data ----
         ex = _parse_extra(r)
-        pps = sorted([p for p in _with_chart_lines(ex.get("past_performances") or [],
+        program_lines = h.programs.get(r["horse_id"], []) + (ex.get("past_performances") or [])
+        pps = sorted([p for p in _with_chart_lines(program_lines,
                                                    h.chart.get(norm_name(r.get("horse_name")), []))
                       if str(p.get("date", "")) < d],
                      key=lambda p: p["date"], reverse=True)
         if pps:
+            # Imported programs and standalone charts contain real prior starts even
+            # when the same races were never imported as complete cards.
+            tracked_dates = {s.date for s in starts}
+            additional = [p for p in pps if p["date"] not in tracked_dates
+                          and isinstance(p.get("finish"), (int, float)) and p["finish"] > 0]
+            # One start per horse per day, preferring the merged program/chart line.
+            additional = list({p["date"]: p for p in additional}.values())
+            if additional:
+                form = [(s.date, s.won, s.itm) for s in starts]
+                form += [(p["date"], p["finish"] == 1, p["finish"] <= 3) for p in additional]
+                form.sort()
+                count = len(form)
+                f["h_starts_log"] = math.log1p(count)
+                f["h_no_history"] = 0.0
+                f["h_win_rate"] = _shrunk(sum(x[1] for x in form), count, base, K_HORSE)
+                f["h_itm_rate"] = _shrunk(sum(x[2] for x in form), count, min(3 * base, 0.6), K_HORSE)
+                f["h_last_won"], f["h_last_itm"] = float(form[-1][1]), float(form[-1][2])
+                f["h_last3_itm"] = float(np.mean([x[2] for x in form[-3:]]))
+                days = days_between(form[-1][0], d)
+                f["h_days_log"], f["h_layoff"] = math.log1p(days), float(days > 60)
+                # Fill contextual form using only records with known context.
+                for name, matches in (
+                    ("h_surface_itm", lambda p: surf is not None and p.get("surface") == surf),
+                    ("h_dist_itm", lambda p: yards and p.get("distance_yards") and
+                     abs(_dist_band(p["distance_yards"]) - _dist_band(yards)) <= 1),
+                    ("h_track_itm", lambda p: p.get("track") == trk),
+                    ("h_offtrack_itm", lambda p: off and _off(p.get("condition"))),
+                ):
+                    histories = {
+                        "h_surface_itm": [s for s in starts if surf is not None and s.surface == surf],
+                        "h_dist_itm": [s for s in starts if yards and s.yards and abs(_dist_band(s.yards) - _dist_band(yards)) <= 1],
+                        "h_track_itm": [s for s in starts if s.track == trk],
+                        "h_offtrack_itm": [s for s in starts if off and s.off],
+                    }[name]
+                    matching = [p for p in additional if matches(p)]
+                    if matching or histories:
+                        flags = [s.itm for s in histories] + [p["finish"] <= 3 for p in matching]
+                        f[name] = _shrunk(sum(flags), len(flags), f["h_itm_rate"], 3)
+                ev["additional_pp_starts"] = len(additional)
             figs = [p.get("speed_fig") for p in pps if p.get("speed_fig") is not None]
             if figs:
                 f["pp_last_speed"] = float(figs[0])
@@ -345,7 +392,7 @@ def featurize_race(h: HistoryBuilder, race: dict, runners: list[dict]) -> tuple[
                 if len(figs) >= 3:
                     f["pp_speed_trend"] = float(figs[0] - np.mean(figs[1:3]))
             calls = [p["call_positions"][0] / max(p.get("field_size") or n, 1)
-                     for p in pps[:3] if p.get("call_positions")]
+                     for p in pps[:3] if p.get("call_positions") and p.get("field_size")]
             if calls:
                 f["pp_early_pos"] = float(np.mean(calls))
             f["pp_last_trouble"] = float(bool(pps[0].get("trouble")))
@@ -444,6 +491,7 @@ def build_history(db: Database, before: str) -> HistoryBuilder:
     h = HistoryBuilder(chart=_chart_lines(db))
     races, runners, fin, _ = load_races(db, end=_sub_days(before, 1), official_only=True)
     for rid, race in races.items():
+        h.add_programs(race, runners[rid])
         if fin.get(rid):
             h.add_race(race, runners[rid], fin[rid])
     return h
@@ -472,6 +520,7 @@ def build_dataset(db: Database, start: str | None = None, end: str | None = None
                 samples.append(RaceSample(rid, d, races[rid]["track_id"], races[rid], live, X, evidence,
                                           finish, pay.get(rid, [])))
         for rid in todays:  # only now add date d to history
+            h.add_programs(races[rid], runners[rid])
             if fin.get(rid):
                 h.add_race(races[rid], runners[rid], fin[rid])
     return samples
