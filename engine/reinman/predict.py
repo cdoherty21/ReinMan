@@ -9,6 +9,7 @@ from datetime import timedelta
 import numpy as np
 
 from .config import POLICY
+from . import news
 from .db import Database
 from .features import build_history, data_availability, featurize_race, projected_pace
 from .models import Ensemble
@@ -62,6 +63,13 @@ def analyze_race(db: Database, h, model_version: str, model, artifact: dict, rac
     summ = summarize(p, race["race_id"], lambdas)
     contrib = model.logit.contributions(X) if isinstance(model, Ensemble) and model.logit else None
     factors = [runner_factors(i, contrib, evidence[i], X) for i in range(len(live))]
+    headlines = getattr(h, "news", [])
+    relevant_news = []
+    for i, runner in enumerate(live):
+        matched = news.relevant(headlines, runner, evidence[i].get("pedigree", {}))
+        relevant_news.append([(item["title"], item["url"]) for item in matched])
+        for item in matched:
+            factors[i].append(f"• related headline ({item['source']}): {item['title']} — {item['url']}")
     avail = data_availability(X)
     completeness = float(np.mean([avail["morning_line"], avail["horse_history"], avail["jockey_trainer"],
                                   avail["pedigree"], avail["speed_figures"] or avail["horse_history"]]))
@@ -101,6 +109,7 @@ def analyze_race(db: Database, h, model_version: str, model, artifact: dict, rac
     inputs_hash = stable_hash({"m": model_version, "X": np.round(np.nan_to_num(X, nan=-999), 6).tolist(),
                                "odds": np.round(np.nan_to_num(odds, nan=-1), 3).tolist(), "progs": progs,
                                "cond": race.get("track_condition"), "surface": race.get("surface"),
+                               "news": relevant_news,
                                **({"odds_sources": odds_src} if since else {})})
     return {"race": race, "selection": sel, "runners": runner_rows, "wagers": wagers, "p": p, "q": q,
             "progs": progs, "pace": pace, "inputs_hash": inputs_hash,
@@ -169,6 +178,7 @@ def predict_date(db: Database, race_date: str, changed: dict[str, list[str]] | N
     version, model, row = champion(db)
     artifact = json.loads(row["artifact"])
     h = build_history(db, race_date)
+    h.news = news.recent(db, now)
     races = db.query("SELECT * FROM races WHERE race_date=? AND is_cancelled=0 AND status='scheduled' "
                      "AND post_time IS NOT NULL AND post_time > ? ORDER BY track_id, race_number", [race_date, now])
     runners = defaultdict(list)
@@ -226,3 +236,4 @@ def lock_due(db: Database) -> int:
             db.insert("locks", {"race_id": d["race_id"], "prediction_id": p["prediction_id"]}, verb="INSERT OR IGNORE")
             n += 1
     return n
+
