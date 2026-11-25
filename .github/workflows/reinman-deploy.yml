@@ -1,11 +1,19 @@
-# Deploys the Worker + app and applies D1 migrations. Manual on purpose.
+# Deploys the Worker + app after successful main-branch CI, or on manual request.
 name: reinman-deploy
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: [reinman-ci]
+    branches: [main]
+    types: [completed]
+concurrency:
+  group: reinman-production-deploy
+  cancel-in-progress: false
 permissions:
   contents: read
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: . } }
     env:
@@ -13,9 +21,14 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@v5
         with: { node-version: 22, cache: npm, cache-dependency-path: package-lock.json }
       - run: npm ci
+      - name: Verify production commit is current
+        if: github.event_name == 'workflow_run'
+        run: test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/main | cut -f1)"
       - name: Use the real D1 database id
         run: sed -i "s/00000000-0000-0000-0000-000000000000/${{ secrets.D1_DATABASE_ID }}/" worker/wrangler.jsonc
       - run: npm run db:migrate:remote
