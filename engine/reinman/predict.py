@@ -69,7 +69,7 @@ def analyze_race(db: Database, h, model_version: str, model, artifact: dict, rac
         matched = news.relevant(headlines, runner, evidence[i].get("pedigree", {}))
         relevant_news.append([(item["title"], item["url"]) for item in matched])
         for item in matched:
-            factors[i].append(f"• related headline ({item['source']}): {item['title']} — {item['url']}")
+            factors[i].append(f"• related headline ({item['source']}, {item['published_at'][:10]}): {item['title']} — {item['url']}")
     avail = data_availability(X)
     completeness = float(np.mean([avail["morning_line"], avail["horse_history"], avail["jockey_trainer"],
                                   avail["pedigree"], avail["speed_figures"] or avail["horse_history"]]))
