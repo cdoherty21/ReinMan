@@ -515,3 +515,16 @@ table.data td a { font-weight: 550; }
   .race-list-arrow { color: var(--gold-ink); font-size: 1.3rem; line-height: 1; margin-left: auto; }
   .race-list-result .outcome { margin-right: .25rem; }
 }
+
+/* Horse profile lives outside the scrolling race table. */
+.horse-analysis-panel { min-width: 0; width: 100%; max-width: 100%; margin-top: 1rem; padding: 1rem; border: 1px solid #ded9c9; border-radius: 12px; background: #f6f1e4; overflow-wrap: anywhere; }
+.horse-analysis-heading { display: flex; align-items: center; justify-content: space-between; gap: .65rem; margin-bottom: .75rem; }
+.horse-analysis-heading h3 { display: flex; align-items: center; gap: .55rem; margin: 0; min-width: 0; }
+.horse-profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.horse-profile-section { min-width: 0; padding: .8rem; border: 1px solid #ded9c9; border-radius: 9px; background: #fffef9; }
+.horse-profile-section h5 { margin: 0 0 .45rem; color: var(--green-800); font-size: .88rem; font-weight: 650; }
+.horse-profile-section ul { margin: 0; padding-left: 1rem; }
+.horse-profile-section li { margin: .25rem 0; }
+.horse-analysis-panel .analysis-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); margin-top: 1rem; }
+@media (max-width: 640px) { .horse-analysis-panel { padding: .7rem; } .horse-profile-grid, .horse-analysis-panel .analysis-grid { grid-template-columns: minmax(0, 1fr); } }
+

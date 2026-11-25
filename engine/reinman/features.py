@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .db import Database
-from . import historical, horse_profiles
+from . import historical, horse_profiles, medication
 from .ingest import canonical_people
 from .util import days_between, norm_name
 from .sources.tracks import track_info
@@ -98,6 +98,8 @@ class Start:
     jockey: str | None
     trainer: str | None
     days_off: int | None  # layoff before this start
+    finish: int | None = None
+    condition: str | None = None
 
 
 class Counter2:
@@ -181,7 +183,7 @@ class HistoryBuilder:
             self.starts[r["horse_id"]].append(Start(
                 d, trk, surf, yards, off, fs, won, itm, race.get("purse"), r.get("claiming") or race.get("max_claim"),
                 r.get("weight"), r.get("equipment"), r.get("medication"), r.get("jockey_id"), r.get("trainer_id"),
-                days_between(prev.date, d) if prev else None))
+                days_between(prev.date, d) if prev else None, pos, race.get("track_condition")))
             self.cnt[("__all__",)].add(d, won)
             j, t = r.get("jockey_id"), r.get("trainer_id")
             keys = []
@@ -336,14 +338,17 @@ def featurize_race(h: HistoryBuilder, race: dict, runners: list[dict]) -> tuple[
             if r.get("weight") and last.weight:
                 f["weight_change"] = r["weight"] - last.weight
             f["equip_change"] = float((r.get("equipment") or "") != (last.equipment or ""))
-            f["first_lasix"] = float("L" in (r.get("medication") or "").upper() and
-                                     "L" not in (last.medication or "").upper())
+            lasix = medication.first_lasix(r.get("medication"), last.medication)
+            if lasix is not None:
+                f["first_lasix"] = lasix
             if last.jockey and r.get("jockey_id") and last.jockey != r["jockey_id"]:
                 f["j_change_delta"] = (h.rate(("j", r["jockey_id"]), base, K_PERSON, d365) -
                                        h.rate(("j", last.jockey), base, K_PERSON, d365))
             else:
                 f["j_change_delta"] = 0.0
             ev.update(starts=ns, wins=wins, itm=itm, days=days, last_itm=last.itm, last_won=last.won)
+        if medication.normalize(r.get("medication")) == "L1":
+            f["first_lasix"] = 1.0
         if r.get("weight"):
             f["weight"] = float(r["weight"])
         j, t = r.get("jockey_id"), r.get("trainer_id")
@@ -434,8 +439,12 @@ def featurize_race(h: HistoryBuilder, race: dict, runners: list[dict]) -> tuple[
                                                    h.chart.get(norm_name(r.get("horse_name")), []))
                       if str(p.get("date", "")) < d],
                      key=lambda p: p["date"], reverse=True)
+        tracked_lines = [{"date": s.date, "track": s.track, "surface": s.surface,
+                          "distance_yards": s.yards, "field_size": s.field_size, "finish": s.finish,
+                          "condition": s.condition, "jockey_id": s.jockey, "layout": "tracked_result"}
+                         for s in starts]
         profile, profile_features = horse_profiles.build(
-            program_lines + h.chart.get(norm_name(r.get("horse_name")), []), race, r)
+            tracked_lines + program_lines + h.chart.get(norm_name(r.get("horse_name")), []), race, r)
         ev["horse_profile"] = profile
         f.update(profile_features)
         if pps:
@@ -523,7 +532,18 @@ def featurize_race(h: HistoryBuilder, race: dict, runners: list[dict]) -> tuple[
             "equipment": r.get("equipment"), "medication": r.get("medication"),
             "previous_track": ev.get("previous_track"), "travel_miles": ev.get("travel_miles"),
             "rest_days": ev.get("rest_days"), "workouts_30d": ev.get("workouts_30d"),
-            "last_work_date": ev.get("last_work_date"),
+            "last_work_date": ev.get("last_work_date"), "dam_sire": pedigree.get("dam_sire"),
+            "identity": ex.get("horse_identity") or {}, "medication_report": ex.get("medication_report"),
+            "research_source": ex.get("research_source"), "beyer_figures": ev.get("beyer_figures"),
+            "beyer_source": summary.get("source") if observed_before_post(summary) else None,
+            "reported_figures": summary.get("reported_figures") if observed_before_post(summary) else None,
+            "trainer_record": ev.get("trainer_snapshot"), "jockey_record": ev.get("jockey_snapshot"),
+            "tracked_wins": ev.get("archive_wins"), "weight": r.get("weight"),
+            "track": trk, "surface": surf, "distance_yards": yards, "condition": race.get("track_condition"),
+            "post_position": r.get("post_position"), "field_size": n, "race_class": race.get("race_class"),
+            "claiming": r.get("claiming") or race.get("max_claim"),
+            "current_purse": race.get("purse"),
+
         }
         early_positions.append(f["pp_early_pos"])
         rows.append(f)

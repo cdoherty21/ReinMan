@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Link } from "../main";
 import { money, odds, pct, postTime, signedPct, stamp, surfaceName, useApi, wagerLabel } from "../lib";
 import { HorseNumber, HorseSelection, Confidence, Decision, ErrorBox, Loading } from "./common";
@@ -141,10 +141,46 @@ const FACTOR_NAMES: Record<string, string> = {
   trouble_notes: "Trouble notes", workouts: "Workouts",
 };
 
+function HorseProfile({ factors }: { factors: string[] }) {
+  const groups = new Map<string, string[]>();
+  for (const factor of factors.filter(f => f.startsWith("Horse profile · "))) {
+    const detail = factor.slice("Horse profile · ".length);
+    const i = detail.indexOf(" | ");
+    const group = i < 0 ? "Profile" : detail.slice(0, i);
+    const value = i < 0 ? detail : detail.slice(i + 3);
+    groups.set(group, [...(groups.get(group) ?? []), value]);
+  }
+  const order = ["Identity", "Recent form", "Racing behavior", "Race fit", "Today's race", "Pedigree",
+    "Connections", "Preparation", "Trip history", "Sources", "Profile"];
+  return (
+    <div className="horse-profile">
+      <h4>Horse profile</h4>
+      {groups.size ? (
+        <div className="horse-profile-grid">
+          {order.filter(group => groups.has(group)).map(group => (
+            <div className="horse-profile-section" key={group}>
+              <h5>{group}</h5>
+              <ul>{groups.get(group)!.map((value, i) => {
+                const split = value.lastIndexOf(" — https://");
+                return <li key={i}>{split >= 0 ?
+                  <a href={value.slice(split + 3)} target="_blank" rel="noopener noreferrer">{value.slice(0, split)}</a> : value}</li>;
+              })}</ul>
+            </div>
+          ))}
+        </div>
+      ) : <p className="small muted">Profile pending the next prediction refresh.</p>}
+    </div>
+  );
+}
+
 export function Race({ id }: { id: string }) {
   const [snap, setSnap] = useState<number | null>(null);
   const { data, error } = useApi<RaceResp>(`/api/race/${encodeURIComponent(id)}${snap ? `?snapshot=${snap}` : ""}`);
   const [open, setOpen] = useState<string | null>(null);
+  const analysisRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (open) analysisRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [open]);
   if (error) return <ErrorBox error={error} />;
   if (!data) return <Loading />;
   const { race, prediction: p, picks, runners, wagers, results } = data;
@@ -233,52 +269,42 @@ export function Race({ id }: { id: string }) {
                           <td className={`num hide-sm ${x.ev_win != null && x.ev_win > 0 ? "pos" : ""}`}>{signedPct(x.ev_win)}</td>
                           <td><button className="btn ghost small" aria-expanded={isOpen}>{isOpen ? "Hide" : "Analysis"}</button></td>
                         </tr>
-                        {isOpen && (
-                          <tr className="analysis">
-                            <td colSpan={11}>
-                              <div className="analysis-grid">
-                                <div>
-                                  <h4>Probabilities</h4>
-                                  <p>Win {pct(x.win_prob)} · Place {pct(x.place_prob)} · Show {pct(x.show_prob)}</p>
-                                  <p>Expected finish {x.exp_finish.toFixed(1)} · Market {pct(x.market_prob)} · Uncertainty ±{pct(x.uncertainty)}</p>
-                                </div>
-                                <div>
-                                  <h4>Evidence</h4>
-                                  <ul className="factors">
-                                    {x.factors.filter((f) => !f.startsWith("Horse profile · ")).map((f, i) => <li key={i} className={f.startsWith("+") ? "pos" : f.startsWith("−") ? "neg" : ""}><EvidenceLine value={f} /></li>)}
-                                  </ul>
-                                </div>
-                                <div>
-                                  <h4>Connections</h4>
-                                  <p>J: {r?.jockey_name ?? "—"} · T: {r?.trainer_name ?? "—"}</p>
-                                  <p className="muted">
-                                    {r?.sire ? `By ${r.sire}` : ""}{r?.dam ? ` out of ${r.dam}` : ""}
-                                    {r?.weight ? ` · ${r.weight} lb` : ""}{r?.medication ? ` · Med ${r.medication}` : ""}
-                                    {r?.equipment ? ` · Equip ${r.equipment}` : ""}
-                                  </p>
-                                </div>
-                              </div>
-                              <section className="card compact">
-                                <h4>Horse profile</h4>
-                                {x.factors.some((f) => f.startsWith("Horse profile · ")) ? (
-                                  <ul className="factors">
-                                    {x.factors.filter((f) => f.startsWith("Horse profile · ")).map((f, i) => (
-                                      <li key={i}>{f.slice("Horse profile · ".length)}</li>
-                                    ))}
-                                  </ul>
-                                ) : <p className="small muted">Profile pending the next prediction refresh.</p>}
-                              </section>
-                              <RedditDiscussions key={`${id}-${x.program_number}`} raceId={id} program={x.program_number} />
-                              <PastPerformances rows={pastPerformances(r)} />
-                            </td>
-                          </tr>
-                        )}
                       </Fragment>
                     );
                   })}
                 </tbody>
               </table>
             </div>
+            {open && picks.some(x => x.program_number === open) && (() => {
+              const x = picks.find(x => x.program_number === open)!;
+              const r = byProg.get(x.program_number);
+              return (
+                <section className="horse-analysis-panel" ref={analysisRef}>
+                  <div className="horse-analysis-heading">
+                    <h3><HorseNumber number={x.program_number} /> {x.horse_name}</h3>
+                    <button className="btn ghost small" onClick={() => setOpen(null)}>Close</button>
+                  </div>
+                  <HorseProfile factors={x.factors} />
+                  <div className="analysis-grid">
+                    <div>
+                      <h4>Probabilities</h4>
+                      <p>Win {pct(x.win_prob)} · Place {pct(x.place_prob)} · Show {pct(x.show_prob)}</p>
+                      <p>Expected finish {x.exp_finish.toFixed(1)} · Market {pct(x.market_prob)} · Uncertainty ±{pct(x.uncertainty)}</p>
+                    </div>
+                    <div>
+                      <h4>Model evidence</h4>
+                      <ul className="factors">
+                        {x.factors.filter(f => !f.startsWith("Horse profile · ")).map((f, i) => (
+                          <li key={i} className={f.startsWith("+") ? "pos" : f.startsWith("−") ? "neg" : ""}><EvidenceLine value={f} /></li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                  <PastPerformances rows={pastPerformances(r)} />
+                  <RedditDiscussions key={`${id}-${x.program_number}`} raceId={id} program={x.program_number} />
+                </section>
+              );
+            })()}
             {scratched.length > 0 && <p className="muted small">Scratched: {scratched.map((s, i) => <Fragment key={s.program_number}>{i > 0 && ", "}<HorseNumber number={s.program_number} /> {s.horse_name}</Fragment>)}</p>}
             {p.data_notes && p.data_notes.unavailable.length > 0 && (
               <p className="notice small">

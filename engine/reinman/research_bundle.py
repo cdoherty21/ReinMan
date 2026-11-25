@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 
 from .sources.tracks import canonical_track_code
+from .medication import normalize
 from .util import jockey_id, norm_name, now_iso, parse_distance_yards, parse_odds, parse_post_time, surface_code, to_int, trainer_id
 
 
@@ -30,6 +31,13 @@ def cards_from_bundle(data: object) -> list[dict] | None:
             m = re.fullmatch(r"\s*(\d+[A-Z]?)\s*-\s*(.+?)\s+-\s+(.+?)\s*,\s*by\s+(.+?)\s*", part)
             if m:
                 pedigree[m[1]] = dict(zip(("sire", "dam", "dam_sire"), m.groups()[1:]))
+        metadata = race.get("metadata") or {}
+        owners, breeders, equipment_changes = {}, {}, {}
+        for field, target in (("Owners", owners), ("Breeders", breeders), ("Equipment Changes", equipment_changes)):
+            for part in (metadata.get(field) or "").split(";"):
+                match = re.match(r"\s*(\d+[A-Z]?)\s*-\s*(.+)", part.strip())
+                if match:
+                    target[match[1]] = match[2].strip()
         runners = []
         for row in race["entries"]:
             program = str(row.get("program") or "").upper()
@@ -38,15 +46,29 @@ def cards_from_bundle(data: object) -> list[dict] | None:
                 continue
             program = program if re.fullmatch(r"\d+[A-Z]?", program) else None
             extra = {"research_source": race["url"]}
+            identity = {"age_sex": row.get("age_sex"), "owner": owners.get(program), "breeder": breeders.get(program),
+                        "equipment_change": equipment_changes.get(program), "source": race["url"]}
+            extra["horse_identity"] = {key: value for key, value in identity.items() if value}
+            if row.get("medication") is not None:
+                extra["medication_report"] = {"code": normalize(row.get("medication")), "source": race["url"]}
             figures = str(row.get("last_three_beyer") or "").split()
-            if prepost and figures and all(re.fullmatch(r"-?\d+", number) for number in figures):
-                extra["beyer_summary"] = {"race_date": day, "observed_at": observed, "figures": [int(v) for v in figures[:3]],
-                                          "source": row.get("supplemental_source")}
+            if prepost and figures:
+                reported = [int(v) if re.fullmatch(r"-?\d+", v) else None for v in figures[:3]]
+                known = []
+                for value in reported:
+                    if value is None:
+                        break
+                    known.append(value)
+                if any(v is not None for v in reported):
+                    extra["beyer_summary"] = {"race_date": day, "observed_at": observed, "figures": known,
+                                              "reported_figures": reported, "source": row.get("supplemental_source")}
             for person in ("jockey", "trainer"):
                 starts = to_int(row.get(person + "_2026_starts"))
                 pct = to_int(row.get(person + "_2026_win_pct"))
+                itm_pct = to_int(row.get(person + "_2026_itm_pct"))
                 if prepost and starts and pct is not None and 0 <= pct <= 100:
                     extra[person + "_snapshot"] = {"race_date": day, "observed_at": observed, "starts": starts, "win_pct": pct,
+                                                   "itm_pct": itm_pct if itm_pct is not None and 0 <= itm_pct <= 100 else None,
                                                    "source": row.get("supplemental_source")}
             weight = re.match(r"\d+", str(row.get("weight") or ""))
             runner = {"program_number": program, "horse_name": name, "horse_id": f"name:{norm_name(name)}",
@@ -55,7 +77,7 @@ def cards_from_bundle(data: object) -> list[dict] | None:
                       "jockey_id": jockey_id(row.get("jockey")),
                       "trainer_id": trainer_id(row.get("trainer")),
                       "ml_odds": parse_odds(row.get("morning_line")),
-                      "weight": int(weight[0]) if weight else None, "medication": row.get("medication"),
+                      "weight": int(weight[0]) if weight else None, "medication": normalize(row.get("medication")),
                       "claiming": to_int(row.get("claim_price")), "extra": extra,
                       **pedigree.get(program, {})}
             runners.append(runner)
@@ -70,3 +92,4 @@ def cards_from_bundle(data: object) -> list[dict] | None:
                                  "breed": "thoroughbred", "runners": runners}],
                       "complete": complete and not conditional})
     return cards
+

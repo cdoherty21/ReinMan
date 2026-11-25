@@ -11,6 +11,7 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from ..medication import normalize
 from ..util import jockey_id, norm_name, parse_iso, parse_odds, parse_post_time, surface_code, to_float, trainer_id
 from ..wagertypes import normalize_wager_type
 from .tracks import canonical_track_code
@@ -75,7 +76,10 @@ def board_race(row: dict, race_date: str, now: datetime) -> dict | None:
                 "jockey_id": jockey_id(jockey), "jockey_name": jockey,
                 "trainer_id": trainer_id(trainer), "trainer_name": trainer,
                 "post_position": horse.get("post_position"), "weight": horse.get("weight_lb"),
-                "medication": horse.get("medication"), "sire": horse.get("sire"),
+                "medication": normalize(horse.get("medication")),
+                "extra": {"medication_report": {"code": normalize(horse.get("medication")), "source": "PuntersEdge"}}
+                         if "medication" in horse and horse.get("medication") is not None else None,
+                "sire": horse.get("sire"),
                 "dam": horse.get("dam"), "dam_sire": horse.get("dam_sire"), "scratched": scratched,
                 "ml_odds": parse_odds(interest.get("morning_line")),
                 "live_odds": parse_odds(interest.get("win_odds")) if live else None,
@@ -237,3 +241,4 @@ class PuntersEdge:
     def results(self, meet: dict) -> list[dict]:
         self.result_meets(meet["race_date"])
         return list(self.settlements[meet["race_date"]].get(meet["meet_id"], {}).get("races", {}).values())
+
