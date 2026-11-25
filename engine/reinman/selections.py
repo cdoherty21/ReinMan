@@ -11,6 +11,7 @@ import hashlib
 import numpy as np
 
 from .config import POLICY, Policy
+from .horse_profiles import _n
 from .util import fmt_odds
 
 PHRASES = {
@@ -88,35 +89,37 @@ def runner_factors(i: int, contrib: np.ndarray | None, evidence: dict, X: np.nda
                 lines.append(("+ " if c[j] > 0 else "− ") + phrase)
     ev = evidence or {}
     if ev.get("starts"):
-        lines.append(f"• record in tracked races: {ev['starts']} starts, {ev['wins']} wins, {ev['itm']} in the money")
+        lines.append(f"• record in tracked races: {_n(ev['starts'], 'start')}, {_n(ev['wins'], 'win')}, {ev['itm']} in the money")
         if ev.get("days") is not None:
-            lines.append(f"• {ev['days']} days since last tracked start")
+            lines.append(f"• {_n(ev['days'], 'day')} since last tracked start")
     else:
         lines.append("• no prior starts in Rein Man's database")
     if ev.get("archive_wins"):
         lines.append("• historical winner archive at this track: " + ", ".join(
-            f"{role} {count} recorded wins" for role, count in ev["archive_wins"].items()))
+            f"{role} {_n(count, 'recorded win')}" for role, count in ev["archive_wins"].items()))
     from .horse_profiles import evidence as profile_evidence
     if "horse_profile" in ev:
         lines.extend("Horse profile · " + line for line in profile_evidence(ev["horse_profile"]))
     if ev.get("additional_pp_starts"):
-        lines.append(f"• {ev['additional_pp_starts']} additional starts from uploaded past performances or charts")
+        lines.append(f"• {_n(ev['additional_pp_starts'], 'additional start')} from uploaded past performances or charts")
     if ev.get("pedigree"):
         pedigree = ev["pedigree"]
         lines.append("• lineage: " + ", ".join(f"{k.replace('_', ' ')} {v}" for k, v in pedigree.items()))
     if ev.get("travel_miles") is not None:
-        lines.append(f"• {ev['travel_miles']} miles between last race venue ({ev['previous_track']}) and today's track; {ev['rest_days']} days since that start")
+        days = f"{_n(ev['rest_days'], 'day')} since that start"
+        lines.append(f"• same track as last start ({ev['previous_track']}); {days}" if not ev["travel_miles"] else
+                     f"• {ev['travel_miles']} miles from last race venue ({ev['previous_track']}); {days}")
     if ev.get("workouts_30d"):
-        lines.append(f"• {ev['workouts_30d']} recorded workouts in last 30 days; latest {ev['last_work_date']}")
+        lines.append(f"• {_n(ev['workouts_30d'], 'recorded workout')} in last 30 days; latest {ev['last_work_date']}")
     if ev.get("beyer_figures"):
         lines.append("• recent Beyer figures (latest first): " + ", ".join(map(str, ev["beyer_figures"])))
     for person in ("trainer", "jockey"):
         snapshot = ev.get(person + "_snapshot")
         if snapshot:
-            lines.append(f"• {person} published season record: {snapshot['win_pct']}% wins from {snapshot['starts']} starts")
+            lines.append(f"• {person} published season record: {snapshot['win_pct']}% wins from {_n(snapshot['starts'], 'start')}")
         record = ev.get(person + "_30d")
         if record and record["starts"]:
-            lines.append(f"• {person}: {record['wins']} wins in {record['starts']} tracked starts in last 30 days")
+            lines.append(f"• {person}: {_n(record['wins'], 'win')} in {_n(record['starts'], 'tracked start')} in last 30 days")
     return lines
 
 

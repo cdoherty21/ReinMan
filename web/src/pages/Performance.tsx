@@ -71,7 +71,7 @@ export function Performance() {
             <div className="tile"><span>Hypothetical ROI</span><b className={(s.wagers.roi ?? 0) >= 0 ? "pos" : "neg"}>{signedPct(s.wagers.roi)}</b><small>{s.wagers.wagers} wagers · net {money(s.wagers.net)}</small></div>
             <div className="tile"><span>Wagered / returned</span><b>{money(s.wagers.wagered)}</b><small>returned {money(s.wagers.returned)}</small></div>
             <div className="tile"><span>Max drawdown</span><b>{money(s.wagers.max_drawdown)}</b><small>Longest losing streak {s.wagers.longest_losing_streak}</small></div>
-            <div className="tile"><span>Top pick, $2 flat win</span><b className={(s.picks.flat_win_roi ?? 0) >= 0 ? "pos" : "neg"}>{signedPct(s.picks.flat_win_roi)}</b><small>avg odds {s.picks.avg_odds?.toFixed(1) ?? "—"}-1</small></div>
+            <div className="tile"><span>Top pick, $2 flat win</span><b className={(s.picks.flat_win_roi ?? 0) >= 0 ? "pos" : "neg"}>{signedPct(s.picks.flat_win_roi)}</b><small>avg odds {s.picks.avg_odds != null ? `${s.picks.avg_odds.toFixed(1)}-1` : "—"}</small></div>
           </section>
 
           <section className="card">

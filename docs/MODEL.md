@@ -81,3 +81,16 @@ prior finishes, recency, distance, track, condition and speed/pace where availab
 Records are deduplicated by horse and race date; missing positions or context remain
 unknown. Later cards cannot add past-performance records to earlier training races.
 Sparse card refreshes preserve supplemental runner data for the same horse.
+
+## News events (`news_events.py`)
+Headlines and article text from the configured feeds (RSS and Atom) are linked to runners
+on the card when the horse's name, or its jockey's or trainer's full name, appears in the
+same sentence as an event: `scratch`, `jockey_change`, `equipment`, `barn_trouble`
+(suspension, positive test, quarantine) or `health` (injury, bleeding, setback). Nothing here
+moves a probability directly. Scratch, jockey and equipment talk is shown as *unconfirmed*
+until the official card agrees, and unconfirmed scratch or jockey talk about a race posting
+within 30 minutes earns an extra odds read. Barn and health news is a caution flag and the
+`news_caution` model input (1 if seen before post), which counts only if a trained model
+using it passes the promotion gate. Reddit content is not polled or stored: the Worker's
+on-demand lookup (`docs/REDDIT.md`) is the only Reddit use, as Reddit's policy requires.
+

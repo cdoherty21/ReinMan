@@ -7,7 +7,8 @@ delays and added or cancelled races are followed automatically.
 
 With more post windows left in the UTC day than reads, the reads go to the busiest
 windows: a read is spent only if the races posting soon are at least as many as in the
-k-th busiest remaining window (k = reads left).
+k-th busiest remaining window (k = reads left). Unconfirmed scratch or jockey talk about
+a race posting within 30 minutes (``news_events``) earns a read regardless.
 """
 from __future__ import annotations
 
@@ -47,6 +48,10 @@ def board_due(db: Database, now: datetime | None = None, daily_reads: int = DAIL
         [to_iso(now - timedelta(minutes=5)), to_iso(now + timedelta(hours=24))])]
     ahead = sorted((p - now).total_seconds() / 60 for p in posts)
     soon = [m for m in ahead if SOON[0] <= m <= SOON[1]]
+    from .news_events import urgent_races
+    talk = urgent_races(db, to_iso(now + timedelta(minutes=SOON[0])), to_iso(now + timedelta(minutes=30)))
+    if talk:
+        return True, f"unconfirmed scratch or jockey talk about {talk} race(s) posting within 30 min"
     if soon:
         rest = [m for m in ahead if m > 0 and now + timedelta(minutes=m) < end_of_day]
         windows: dict[int, int] = {}

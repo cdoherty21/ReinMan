@@ -26,7 +26,7 @@ import traceback
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from . import backtest, documents, grading, ingest, news, performance, predict, schedule, train
+from . import backtest, documents, grading, ingest, news, news_events, performance, predict, schedule, train
 from .db import Database, SQLiteDatabase, connect
 from .registry import ensure_baseline
 from .sources import configured_sources, get_source
@@ -187,6 +187,7 @@ def monitor(db: Database) -> dict:
     out["grade_pre"] = job(db, "lock", predict.lock_due, db)
     out["documents"] = job(db, "documents", documents.process_pending, db)
     out["news"] = job(db, "news", news.refresh, db)
+    out["news_events"] = job(db, "news_events", news_events.refresh, db, d)
     out["predict"] = job(db, "predict", predict.predict_date, db, d, out["ingest"]["changed_races"])
     out["grade"] = job(db, "grade", grading.grade_all, db)
     if out["results"]["official"] or out["grade"]["predictions_graded"]:
@@ -204,6 +205,8 @@ def daily(db: Database) -> dict:
         out[f"ingest_{day}"] = job(db, "ingest", do_ingest, db, day, sources)
     out["documents"] = job(db, "documents", documents.process_pending, db)
     out["news"] = job(db, "news", news.refresh, db)
+    for day in (d, _shift(d, 1)):
+        out[f"news_events_{day}"] = job(db, "news_events", news_events.refresh, db, day)
     for day in (d, _shift(d, 1)):
         out[f"predict_{day}"] = job(db, "predict", predict.predict_date, db, day)
     out["lock"] = job(db, "lock", predict.lock_due, db)

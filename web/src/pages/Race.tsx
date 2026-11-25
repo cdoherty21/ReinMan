@@ -115,6 +115,10 @@ type Wager = {
   cost: number; est_prob: number; est_return: number | null; ev: number | null; rationale: string | null; legs: string;
   grade_status: string | null; payout: number | null;
 };
+type NewsEvent = { program_number: string; horse_name: string; role: string; entity: string; kind: string; source: string;
+  title: string; url: string; published_at: string; confirmed: boolean | null; sentence: string };
+const EVENT_LABEL: Record<string, string> = { scratch: "Scratch talk", jockey_change: "Jockey change", equipment: "Equipment",
+  barn_trouble: "Barn news", health: "Health news" };
 type Watch = { selection: string; horse_name?: string; est_prob: number; morning_line: number; min_odds: number; rationale: string };
 type RaceResp = {
   race: Record<string, string | number | null>;
@@ -124,7 +128,8 @@ type RaceResp = {
     prediction_id: number; created_at: string; model_version: string; top1: string; top2: string | null; top3: string | null;
     most_likely: string; value_pick: string | null; dark_horse: string | null; confidence: string; confidence_score: number;
     decision: string; take: string; pace: { scenario: string; early_speed_count: number } | null;
-    data_notes: { unavailable: string[]; odds_basis: string; odds_as_of?: string | null; watch?: Watch[] } | null;
+    data_notes: { unavailable: string[]; odds_basis: string; odds_as_of?: string | null; watch?: Watch[];
+      news_events?: NewsEvent[] } | null;
   };
   picks: Pick[]; wagers: Wager[]; runners: Runner[];
   results: { program_number: string | null; horse_name: string; finish_position: number; win_payoff: number | null; place_payoff: number | null; show_payoff: number | null; dead_heat: number }[];
@@ -289,7 +294,7 @@ export function Race({ id }: { id: string }) {
                     <div>
                       <h4>Probabilities</h4>
                       <p>Win {pct(x.win_prob)} · Place {pct(x.place_prob)} · Show {pct(x.show_prob)}</p>
-                      <p>Expected finish {x.exp_finish.toFixed(1)} · Market {pct(x.market_prob)} · Uncertainty ±{pct(x.uncertainty)}</p>
+                      <p>Expected finish {x.exp_finish.toFixed(1)} · Market {pct(x.market_prob)}{x.uncertainty != null ? <> · Uncertainty ±{pct(x.uncertainty)}</> : null}</p>
                     </div>
                     <div>
                       <h4>Model evidence</h4>
@@ -322,6 +327,27 @@ export function Race({ id }: { id: string }) {
               </p>
             )}
           </section>
+
+          {(p.data_notes?.news_events?.length ?? 0) > 0 && (
+            <section className="card">
+              <h2>News &amp; Rumours <span className="muted small">(read, not bet)</span></h2>
+              <ul className="news-events">
+                {p.data_notes!.news_events!.map((e, i) => (
+                  <li key={i}>
+                    <HorseNumber number={e.program_number} /> <b>{e.horse_name}</b>
+                    <span className={`tag ${e.confirmed === false ? "rumour" : e.confirmed ? "confirmed" : "caution"}`}>
+                      {EVENT_LABEL[e.kind] ?? e.kind}
+                    </span>
+                    <span className="muted small">
+                      {e.confirmed === false ? " Unconfirmed" : e.confirmed ? " Confirmed by the card" : " Caution: noted, not priced"}
+                      {" · "}{e.role !== "horse" ? `${e.role} ${e.entity} · ` : ""}{e.source} · {e.published_at?.slice(0, 10)}
+                    </span>
+                    <div className="small"><a href={e.url} target="_blank" rel="noreferrer">“{e.sentence || e.title}”</a></div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           <section className="card">
             <h2>Recommended Wagers <span className="muted small">(hypothetical, tracked)</span></h2>

@@ -56,6 +56,8 @@ FEATURES = [
     "beyer_latest", "beyer_best3", "beyer_trend", "trainer_snapshot_win", "jockey_snapshot_win",
     "archive_horse_wins_log", "archive_trainer_wins_log", "archive_jockey_wins_log", "archive_sire_surface_wins_log",
     *horse_profiles.FEATURES,
+    # news_events: barn or health news about the runner seen before post (0/1)
+    "news_caution",
 ]
 RACE_CONSTANT = {"field_size", "off_track", "is_turf", "is_route"}
 RICH = {f for f in FEATURES if f.startswith("pp_")}
@@ -137,6 +139,7 @@ class HistoryBuilder:
     pedigrees: dict = field(default_factory=dict)
     news: list = field(default_factory=list)
     winner_archive: historical.WinnerHistory = field(default_factory=historical.WinnerHistory)
+    news_caution: dict = field(default_factory=dict)  # (race_id, program) -> [first_seen_at]
 
     def rate(self, key, prior: float, k: float, since: str | None = None) -> float:
         c = self.cnt.get(key)
@@ -546,6 +549,9 @@ def featurize_race(h: HistoryBuilder, race: dict, runners: list[dict]) -> tuple[
 
         }
         early_positions.append(f["pp_early_pos"])
+        seen = h.news_caution.get((race.get("race_id"), r.get("program_number")), [])
+        cutoff = race.get("post_time") or f"{d}T00:00:00Z"
+        f["news_caution"] = float(any(stamp < cutoff for stamp in seen))
         rows.append(f)
         evidence.append(ev)
 
@@ -627,8 +633,14 @@ def _chart_lines(db: Database) -> dict:
     return load_lines(db)
 
 
+def _news_caution(db: Database) -> dict:
+    from .news_events import load_caution
+    return load_caution(db)
+
+
 def build_history(db: Database, before: str) -> HistoryBuilder:
-    h = HistoryBuilder(chart=_chart_lines(db), winner_archive=historical.load(db))
+    h = HistoryBuilder(chart=_chart_lines(db), winner_archive=historical.load(db),
+                       news_caution=_news_caution(db))
     races, runners, fin, _ = load_races(db, end=_sub_days(before, 1))
     for rid, race in races.items():
         h.add_programs(race, runners[rid])
@@ -640,7 +652,8 @@ def build_history(db: Database, before: str) -> HistoryBuilder:
 def build_dataset(db: Database, start: str | None = None, end: str | None = None,
                   min_field: int = 3) -> list[RaceSample]:
     """Chronological samples for official races in [start, end], features point-in-time."""
-    h = HistoryBuilder(chart=_chart_lines(db), winner_archive=historical.load(db))
+    h = HistoryBuilder(chart=_chart_lines(db), winner_archive=historical.load(db),
+                       news_caution=_news_caution(db))
     races, runners, fin, pay = load_races(db, end=end)
     by_date = defaultdict(list)
     for rid, race in races.items():

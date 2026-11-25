@@ -32,6 +32,13 @@ FEATURES = [
 ]
 
 
+def _n(count, singular: str, plural: str | None = None) -> str:
+    """'1 win', '2 wins', '1 top-three finish', '3 top-three finishes'."""
+    count = count or 0
+    word = singular if count == 1 else (plural or (singular + "es" if singular.endswith(("sh", "ch", "s")) else singular + "s"))
+    return f"{count} {word}"
+
+
 def _events(comment: str) -> list[str]:
     events = []
     for label, pattern in PATTERNS.items():
@@ -169,7 +176,7 @@ def evidence(profile: dict) -> list[str]:
         add("Sources", f"Race card — {context['research_source']}")
 
     if profile.get("starts"):
-        add("Recent form", f"{record.get('starts', 0)} recorded finishes · {record.get('wins', 0)} wins · {record.get('itm', 0)} top-three finishes")
+        add("Recent form", f"{_n(record.get('starts'), 'recorded finish')} · {_n(record.get('wins'), 'win')} · {_n(record.get('itm'), 'top-three finish')}")
         for result in profile.get("recent_results", []):
             field = f" of {result['field_size']}" if result.get("field_size") else ""
             add("Recent form", f"{result['date']} · {result['track']} · finished {result['finish']}{field}")
@@ -184,13 +191,13 @@ def evidence(profile: dict) -> list[str]:
         if context.get("beyer_source"):
             add("Sources", f"Published speed figures and connection statistics — {context['beyer_source']}")
 
-    add("Racing behavior", f"{profile.get('comments', 0)} documented trip comments; {profile.get('pace_samples', 0)} starts with running calls.")
+    add("Racing behavior", f"{_n(profile.get('comments'), 'documented trip comment')}; {_n(profile.get('pace_samples'), 'start')} with running calls.")
     if profile.get("style"):
         add("Racing behavior", f"Observed style: {profile['style']}.")
     if profile.get("comments", 0) < 3:
         add("Racing behavior", "Insufficient trip evidence to establish a recurring temperament or gate tendency.")
     for tag, count in sorted(profile.get("events", {}).items()):
-        add("Racing behavior", f"{tag.capitalize()}: observed in {count} of {profile['comments']} documented trips.")
+        add("Racing behavior", f"{tag.capitalize()}: observed in {count} of {_n(profile['comments'], 'documented trip')}.")
     for p in profile.get("observations", []):
         source = f"{p['source']}, document #{p['document_id']}" if p.get("document_id") else p["source"]
         add("Trip history", f"{p['date']} · {p['track']}" + (f" R{p['race_number']}" if p.get("race_number") else "") +
@@ -206,7 +213,7 @@ def evidence(profile: dict) -> list[str]:
     if context.get("claiming"):
         add("Today's race", f"Claiming price: ${context['claiming']:,.0f}.")
     for tag, sample in profile.get("comparisons", {}).items():
-        add("Race fit", f"{tag.capitalize()}: {sample['wins']} wins and {sample['itm']} top-three finishes in {sample['starts']} recorded starts.")
+        add("Race fit", f"{tag.capitalize()}: {_n(sample['wins'], 'win')} and {_n(sample['itm'], 'top-three finish')} in {_n(sample['starts'], 'recorded start')}.")
     if not profile.get("comparisons"):
         add("Race fit", "No comparable recorded finishes to establish track, distance or surface preference.")
     for role in ("trainer", "jockey"):
@@ -214,9 +221,9 @@ def evidence(profile: dict) -> list[str]:
             add("Connections", f"{role.title()}: {context[role]}")
         stats = context.get(role + "_record")
         if stats:
-            add("Connections", f"{role.title()} published season record: {stats['win_pct']}% wins from {stats['starts']} starts" + (f"; {stats['itm_pct']}% top-three finishes." if stats.get("itm_pct") is not None else "."))
+            add("Connections", f"{role.title()} published season record: {stats['win_pct']}% wins from {_n(stats['starts'], 'start')}" + (f"; {stats['itm_pct']}% top-three finishes." if stats.get("itm_pct") is not None else "."))
     for role, count in (context.get("tracked_wins") or {}).items():
-        add("Connections", f"Historical winner archive: {role} recorded {count} wins at this track.")
+        add("Connections", f"Historical winner archive: {role} recorded {_n(count, 'win')} at this track.")
     if context.get("weight"):
         add("Preparation", f"Assigned weight: {context['weight']:g} lb.")
     if context.get("equipment"):
@@ -228,11 +235,12 @@ def evidence(profile: dict) -> list[str]:
         med = medication_label(context.get("medication"))
         add("Preparation", f"Medication: {med}" + (f" — {report['source']}" if report.get("source") else "."))
     if context.get("rest_days") is not None:
-        add("Preparation", f"Last recorded start: {context['previous_track']}, {context['rest_days']} days ago.")
+        add("Preparation", f"Last recorded start: {context['previous_track']}, {_n(context['rest_days'], 'day')} ago.")
     if context.get("travel_miles") is not None:
-        add("Preparation", f"Distance between recorded race venues: {context['travel_miles']} miles.")
+        add("Preparation", "Same track as its last recorded start." if not context["travel_miles"] else
+            f"Shipped about {_n(context['travel_miles'], 'mile')} from its last recorded start.")
     if context.get("workouts_30d"):
-        add("Preparation", f"{context['workouts_30d']} recorded workouts in the past 30 days; latest {context['last_work_date']}.")
+        add("Preparation", f"{_n(context['workouts_30d'], 'recorded workout')} in the past 30 days; latest {context['last_work_date']}.")
     else:
         add("Preparation", "Recent workout details unavailable.")
     return out

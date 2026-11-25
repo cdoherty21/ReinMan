@@ -835,7 +835,7 @@ export default {
     await env.DB.prepare("INSERT INTO job_runs (job, finished_at, status, details) VALUES ('worker_cron', strftime('%Y-%m-%dT%H:%M:%fZ','now'), 'ok', ?)")
       .bind(JSON.stringify({ locked, dispatch }))
       .run();
-    await env.DB.prepare("DELETE FROM job_runs WHERE job = 'worker_cron' AND started_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 days')").run();
+    await env.DB.prepare("DELETE FROM job_runs WHERE job IN ('worker_cron','reddit_lookup') AND started_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 days')").run();
     await env.DB.prepare("DELETE FROM login_failures WHERE at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day')").run();
   },
 } satisfies ExportedHandler<Env>;

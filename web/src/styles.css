@@ -528,3 +528,11 @@ table.data td a { font-weight: 550; }
 .horse-analysis-panel .analysis-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); margin-top: 1rem; }
 @media (max-width: 640px) { .horse-analysis-panel { padding: .7rem; } .horse-profile-grid, .horse-analysis-panel .analysis-grid { grid-template-columns: minmax(0, 1fr); } }
 
+/* News & Rumours on the race page */
+.news-events { list-style: none; margin: 0; padding: 0; }
+.news-events li { padding: .55rem 0; border-top: 1px solid #ece6d6; }
+.news-events li:first-child { border-top: 0; }
+.news-events li > div { margin-top: .2rem; overflow-wrap: anywhere; }
+.tag.rumour { background: #fbe9d0; color: #8a4b0f; }
+.tag.confirmed { background: #dcefe3; color: var(--green-800); }
+.tag.caution { background: #f5dede; color: var(--red); }

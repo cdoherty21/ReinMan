@@ -9,7 +9,7 @@ from datetime import timedelta
 import numpy as np
 
 from .config import POLICY
-from . import news
+from . import news, news_events
 from .db import Database
 from .features import build_history, data_availability, featurize_race, projected_pace
 from .models import Ensemble
@@ -89,6 +89,9 @@ def analyze_race(db: Database, h, model_version: str, model, artifact: dict, rac
                            [race["race_id"]])
     sel = select(race["race_id"], progs, names, p, comps, odds, odds_src, factors, wagers, completeness,
                  artifact.get("kind", "?"), watch=watch)
+    events = news_events.for_race(db, race["race_id"], runners, now_iso())
+    if events:
+        sel["take"] = sel["take"] + " " + news_events.summary(events)
     q = None
     if market is not None:
         q = 1 / (market + 1)
@@ -116,12 +119,14 @@ def analyze_race(db: Database, h, model_version: str, model, artifact: dict, rac
                                "cond": race.get("track_condition"), "surface": race.get("surface"),
                                "news": relevant_news,
                                "horse_profiles": [e.get("horse_profile") for e in evidence],
+                               "events": [(e["program_number"], e["kind"], e["url"], e["confirmed"]) for e in events],
                                **({"odds_sources": odds_src} if since else {})})
     return {"race": race, "selection": sel, "runners": runner_rows, "wagers": wagers, "p": p, "q": q,
             "progs": progs, "pace": pace, "inputs_hash": inputs_hash,
             "data_notes": {"unavailable": unavailable, "odds_basis": "live" if market is live_odds else
                            "morning_line" if market is not None else "none",
-                           "odds_as_of": odds_as_of, "watch": watch}}
+                           "odds_as_of": odds_as_of, "watch": watch,
+                           "news_events": news_events.as_notes(events)}}
 
 
 def record(db: Database, model_version: str, a: dict, reason: str) -> int | None:

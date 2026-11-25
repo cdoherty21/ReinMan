@@ -1,6 +1,9 @@
-"""Free syndicated racing headlines, retained with timestamps and original links."""
+"""Free syndicated racing headlines, retained with timestamps and original links, plus a
+short plain-text body (``news_bodies``) that ``news_events`` reads for structured events.
+RSS 2.0 and Atom feeds are both accepted."""
 from __future__ import annotations
 
+import html
 import logging
 import os
 import re
@@ -56,28 +59,64 @@ FEEDS = (
 
 
 
+ATOM = "{http://www.w3.org/2005/Atom}"
+
+
+def _text(raw: str | None, limit: int = 2000) -> str:
+    """Plain text from an HTML or text fragment."""
+    return " ".join(re.sub(r"<[^>]+>", " ", html.unescape(raw or "")).split())[:limit]
+
+
+def _stamp(raw: str | None) -> str | None:
+    raw = (raw or "").strip()
+    try:
+        when = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            when = parsedate_to_datetime(raw)
+        except (TypeError, ValueError, OverflowError):
+            return None
+    return to_iso(when) if when.tzinfo is not None else None
+
+
 def parse_feed(xml: bytes, source: str, observed: str) -> list[dict]:
     root = ElementTree.fromstring(xml)
-    if root.tag != "rss":
-        raise ValueError("Expected an RSS feed")
+    if root.tag == "rss":
+        entries = [(item.findtext("title"), (item.findtext("link") or "").strip(), item.findtext("pubDate"),
+                    item.findtext("{http://purl.org/rss/1.0/modules/content/}encoded") or item.findtext("description"),
+                    item.findtext("source"))
+                   for item in root.findall("./channel/item")[:100]]
+    elif root.tag == ATOM + "feed":
+        entries = []
+        for entry in root.findall(ATOM + "entry")[:100]:
+            link = entry.find(ATOM + "link[@rel='alternate']")
+            if link is None:
+                link = entry.find(ATOM + "link")
+            entries.append((entry.findtext(ATOM + "title"), (link.get("href") or "") if link is not None else "",
+                            entry.findtext(ATOM + "published") or entry.findtext(ATOM + "updated"),
+                            entry.findtext(ATOM + "content") or entry.findtext(ATOM + "summary"), None))
+    else:
+        raise ValueError("Expected an RSS or Atom feed")
     rows = []
-    for item in root.findall("./channel/item")[:100]:
-        title = " ".join((item.findtext("title") or "").split())
-        url = (item.findtext("link") or "").strip()
-        try:
-            published = parsedate_to_datetime(item.findtext("pubDate") or "")
-            if published.tzinfo is None:
-                continue
-            stamp = to_iso(published)
-        except (TypeError, ValueError, OverflowError):
+    for title, url, published, body, publisher in entries:
+        title = " ".join((title or "").split())
+        stamp = _stamp(published)
+        if not stamp:
             continue
-        publisher = " ".join((item.findtext("source") or "").split()) if source.startswith("Google News") else ""
+        publisher = " ".join((publisher or "").split()) if source.startswith("Google News") else ""
         if publisher and title.endswith(" - " + publisher):
             title = title[:-(len(publisher) + 3)].strip()
         if title and url.startswith("https://") and stamp <= observed:
             rows.append({"url": url, "source": publisher or source, "title": title[:400],
-                         "published_at": stamp, "first_seen_at": observed})
+                         "published_at": stamp, "first_seen_at": observed, "body": _text(body)})
     return rows
+
+
+def ensure_tables(db: Database) -> None:
+    # Also in migrations; kept here so a deployment with a pending migration still works.
+    db.execute("CREATE TABLE IF NOT EXISTS racing_news (url TEXT PRIMARY KEY, source TEXT NOT NULL, "
+               "title TEXT NOT NULL, published_at TEXT NOT NULL, first_seen_at TEXT NOT NULL)")
+    db.execute("CREATE TABLE IF NOT EXISTS news_bodies (url TEXT PRIMARY KEY, body TEXT NOT NULL)")
 
 
 class FeedRateLimited(Exception):
@@ -115,8 +154,7 @@ def refresh(db: Database) -> dict:
         return {"skipped": "recent news poll"}
     db.insert("job_runs", {"job": "news_poll", "started_at": now, "finished_at": now,
                            "status": "reserved", "details": signature})
-    db.execute("CREATE TABLE IF NOT EXISTS racing_news (url TEXT PRIMARY KEY, source TEXT NOT NULL, "
-               "title TEXT NOT NULL, published_at TEXT NOT NULL, first_seen_at TEXT NOT NULL)")
+    ensure_tables(db)
     results = {}
     unique = {}
     throttled = set()
@@ -135,7 +173,10 @@ def refresh(db: Database) -> dict:
         results[source] = "unavailable" if rows is None else len(rows)
         for row in rows or []:
             unique.setdefault(row["url"], row)
-    db.insert_many("racing_news", unique.values(), verb="INSERT OR IGNORE")
+    db.insert_many("racing_news", [{k: r[k] for k in ("url", "source", "title", "published_at", "first_seen_at")}
+                                   for r in unique.values()], verb="INSERT OR IGNORE")
+    db.insert_many("news_bodies", [{"url": r["url"], "body": r["body"]} for r in unique.values() if r.get("body")],
+                   verb="INSERT OR IGNORE")
     return {"feeds": results, "unique_headlines": len(unique)}
 
 
