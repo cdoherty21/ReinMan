@@ -1,8 +1,9 @@
 // Rein Man Worker: private API + static app + scheduled locking.
+import { redditConfigured, searchDiscussions, type RedditConfig } from "./reddit";
 import { etHour, monitorPlan } from "./schedule";
 import { COOKIE, checkPassword, hashPassword, makeSession, randomToken, readCookie, sameEmail, sessionCookie, sha256, verifySession } from "./auth";
 
-export interface Env {
+export interface Env extends RedditConfig {
   DB: D1Database;
   ASSETS: Fetcher;
   /** The login email; password-reset emails go here. (REINMAN_USERNAME is accepted as a fallback.) */
@@ -297,6 +298,27 @@ const routes: [string, RegExp, Handler][] = [
         (prediction as Record<string, unknown>).data_notes = parseJSON((prediction as Record<string, unknown>).data_notes);
       }
       return json({ race, lock, snapshots, prediction, picks, wagers, runners, results, payoffs, changes, grade, docNotes });
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/race\/([A-Za-z0-9-]+)\/reddit\/([A-Za-z0-9]+)$/,
+    async (_req, env, _url, m) => {
+      if (!redditConfigured(env)) return json({ status: "unconfigured", discussions: [] });
+      const horse = await first<{ horse_name: string }>(env.DB,
+        "SELECT horse_name FROM runners WHERE race_id=? AND program_number=?", m[1], m[2]);
+      if (!horse) return json({ error: "Horse not found" }, 404);
+      // Shared rate limit across Worker instances, without saving Reddit content.
+      const claim = await first<{ id: number }>(env.DB,
+        `INSERT INTO job_runs (job, status) SELECT 'reddit_lookup', 'ok'
+         WHERE NOT EXISTS (SELECT 1 FROM job_runs WHERE job='reddit_lookup'
+           AND started_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-10 seconds')) RETURNING id`);
+      if (!claim) return json({ status: "rate_limited", discussions: [] }, 429);
+      try {
+        return json({ status: "ok", discussions: await searchDiscussions(env, horse.horse_name) });
+      } catch {
+        return json({ status: "unavailable", discussions: [] }, 503);
+      }
     },
   ],
   [
@@ -817,4 +839,5 @@ export default {
     await env.DB.prepare("DELETE FROM login_failures WHERE at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day')").run();
   },
 } satisfies ExportedHandler<Env>;
+
 
