@@ -6,8 +6,8 @@ Cloudflare's free tier allows 100,000 rows written per day, account-wide, reset 
 
     level      from   behaviour
     normal       0%   everything runs
-    watch       50%   everything runs; the run summary flags the level
-    defer       65%   background work waits (news polling); the Performance stats keep refreshing
+    watch       50%   far-out repeat snapshots limited; all races still analyzed
+    defer       65%   background work waits; repeat snapshots focus on nearer races
     essential   75%   far-from-post odds kept only on large moves; predictions far from
                       post only on a change of pick
     pause_bulk  85%   bulk imports, backfills, maintenance and training refuse to start
@@ -106,7 +106,8 @@ def may(db: Database, kind: str) -> bool:
 def odds_far_move(db: Database) -> float:
     """How large a far-from-post odds move must be to be stored, by level."""
     level = status(db)["level"]
-    return {"essential": 0.25, "pause_bulk": 0.25, "emergency": 1e9}.get(level, 0.10)
+    return {"watch": 0.15, "defer": 0.20, "essential": 0.25,
+            "pause_bulk": 0.25, "emergency": 1e9}.get(level, 0.10)
 
 
 def predict_scope(db: Database) -> dict:
@@ -116,6 +117,10 @@ def predict_scope(db: Database) -> dict:
         return {"within_min": 30, "prob_step": 0.03}
     if level in ("essential", "pause_bulk"):
         return {"within_min": 90, "prob_step": 0.02}
+    if level == "defer":
+        return {"within_min": 120, "prob_step": 0.02}
+    if level == "watch":
+        return {"within_min": 180, "prob_step": 0.01}
     return {"within_min": None, "prob_step": 0.01}
 
 
@@ -128,7 +133,7 @@ def guard_bulk(db: Database, what: str) -> dict | None:
 
 
 # ---- bulk imports: resumable, never allowed to crowd out race-day writes -------------
-BULK_RUN_CAP = 20_000   # rows one run may spend on imports before handing over to the next
+BULK_RUN_CAP = 10_000   # rows one run may spend on imports before handing over to the next
 SMALL_JOB = 2_000       # an ordinary upload (one program or chart) always finishes
 
 
@@ -142,11 +147,11 @@ def start_run(db: Database) -> None:
 
 
 def keep_going(db: Database) -> bool:
-    """Whether a bulk import may continue in this run. Small jobs always finish (unless
-    in an emergency); large ones stop at the per-run cap or once the day reaches the
+    """Whether a bulk import may continue in this run. Small jobs may finish until
+    the pause_bulk level; large ones stop at the per-run cap or once the day reaches the
     ``defer`` level, leaving at least a third of the day's writes for live racing."""
     spent = db.rows_written - getattr(db, "_run_start", 0)
-    if not may(db, "standard"):
+    if not may(db, "bulk"):
         return False
     if spent < SMALL_JOB:
         return True

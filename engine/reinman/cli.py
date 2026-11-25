@@ -225,8 +225,7 @@ def monitor(db: Database) -> dict:
     d = today()
     started, before = now_iso(), db.rows_written
     quota.start_run(db)
-    q = quota.status(db, refresh=True)
-    report_quota(q)
+    quota.status(db, refresh=True)
     sources = automatic_sources(db)
     free = any(src.name == "puntersedge" for src in sources)
     # Free board reads are aimed just before posts (schedule.board_due); other sources
@@ -245,7 +244,7 @@ def monitor(db: Database) -> dict:
                       {"official": 0, "deferred_to": "daily"})
     out["grade_pre"] = job(db, "lock", predict.lock_due, db, quiet=True)
     out["documents"] = (job(db, "documents", documents.process_pending, db, quiet=True)
-                        if quota.may(db, "standard") else deferred("documents", quota.status(db)))
+                        if quota.may(db, "bulk") else deferred("documents", quota.status(db)))
     out["news"] = (job(db, "news", news.refresh, db, quiet=True)
                    if quota.may(db, "background") else deferred("news poll", quota.status(db)))
     out["news_events"] = (job(db, "news_events", news_events.refresh, db, d, quiet=True)
@@ -259,6 +258,7 @@ def monitor(db: Database) -> dict:
     q = quota.status(db)
     out["quota"] = q
     _log_job(db, "monitor", started, "ok", json.dumps(out, default=str)[:4000], db.rows_written - before)
+    report_quota(quota.status(db))
     return out
 
 
@@ -266,8 +266,7 @@ def daily(db: Database) -> dict:
     d = today()
     out = {}
     quota.start_run(db)
-    q = quota.status(db, refresh=True)
-    report_quota(q)
+    quota.status(db, refresh=True)
     sources = automatic_sources(db)
     for day in (_shift(d, -1), d):
         out[f"results_{day}"] = job(db, "results", do_results, db, day, sources)
@@ -275,7 +274,7 @@ def daily(db: Database) -> dict:
     for day in (d, _shift(d, 1)):
         out[f"ingest_{day}"] = job(db, "ingest", do_ingest, db, day, sources, fresh)
     out["documents"] = (job(db, "documents", documents.process_pending, db)
-                        if quota.may(db, "standard") else deferred("documents", quota.status(db)))
+                        if quota.may(db, "bulk") else deferred("documents", quota.status(db)))
     out["news"] = (job(db, "news", news.refresh, db)
                    if quota.may(db, "background") else deferred("news poll", quota.status(db)))
     for day in (d, _shift(d, 1)):
@@ -289,6 +288,7 @@ def daily(db: Database) -> dict:
     out["stats"] = (job(db, "stats", performance.refresh_stats, db)
                     if quota.may(db, "standard") else deferred("stats refresh", quota.status(db)))
     out["quota"] = quota.status(db)
+    report_quota(out["quota"])
     return out
 
 
@@ -445,10 +445,10 @@ def main(argv=None) -> int:
         "inspect-documents": lambda: inspect_documents(db, a.id, a.grep, a.max_chars),
         "ingest": lambda: job(db, "ingest", do_ingest, db, d),
         "results": lambda: job(db, "results", do_results, db, d),
-        "predict": lambda: job(db, "predict", predict.predict_date, db, d),
+        "predict": lambda: job(db, "predict", predict.predict_date, db, d, scope=quota.predict_scope(db)),
         "lock": lambda: job(db, "lock", predict.lock_due, db),
         "documents": lambda: (job(db, "documents", documents.process_queue, db, getattr(a, "rescan", False))
-                              if quota.may(db, "standard") else deferred("documents", quota.status(db))),
+                              if quota.may(db, "bulk") else deferred("documents", quota.status(db))),
         "grade": lambda: job(db, "grade", grading.grade_all, db),
         "stats": lambda: job(db, "stats", performance.refresh_stats, db),
         "train": lambda: bulk(db, "train", lambda: guarded(db, "train", 24, a.force,

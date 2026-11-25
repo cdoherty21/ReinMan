@@ -188,3 +188,31 @@ def test_performance_page_keeps_refreshing_under_budget_pressure(db, monkeypatch
     out = cli.monitor(db)
     assert "deferred" not in out.get("stats", {}), out.get("stats")
     assert db.scalar("SELECT computed_at FROM stats_cache WHERE key='overall'") > "2026-11-24"
+
+
+def test_watch_and_defer_reduce_nonessential_history(db, monkeypatch):
+    monkeypatch.setenv("REINMAN_QUOTA_USED", "50000")
+    assert quota.predict_scope(db)["within_min"] == 180
+    assert quota.odds_far_move(db) == 0.15
+    monkeypatch.setenv("REINMAN_QUOTA_USED", "65000")
+    assert quota.predict_scope(db)["within_min"] == 120
+    assert quota.odds_far_move(db) == 0.20
+    monkeypatch.setenv("REINMAN_QUOTA_USED", "86000")
+    quota.start_run(db)
+    assert not quota.keep_going(db)
+    assert quota.may(db, "critical")
+
+
+def test_watch_preserves_first_snapshots_and_defers_far_revisions(db, monkeypatch):
+    monkeypatch.setenv("REINMAN_QUOTA_USED", "50000")
+    fresh = {}
+    post = _future(240)
+    ingest.store_card(db, _card(post), "puntersedge", fresh)
+    scope = quota.predict_scope(db)
+    assert predict.predict_date(db, "2026-11-24", fresh=fresh, scope=scope)["snapshots_written"] == 1
+    fresh = {}
+    ingest.store_card(db, _card(post, odds=(9.0, 3.0, 1.2, 8.0)), "puntersedge", fresh)
+    out = predict.predict_date(db, "2026-11-24", fresh=fresh, scope=scope)
+    assert out["held_for_quota"] == 1 and out["snapshots_written"] == 0
+    monkeypatch.setenv("REINMAN_QUOTA_USED", "0")
+    assert predict.predict_date(db, "2026-11-24", fresh=fresh, scope=quota.predict_scope(db))["snapshots_written"] == 1

@@ -62,10 +62,10 @@ reset, so results, locks and grading would stop too.
 | Level | From | What changes |
 |---|---|---|
 | normal | 0% | everything runs |
-| watch | 50% | everything runs; run summaries show the level |
-| defer | 65% | background work waits: news polling (the Performance page's stats keep refreshing; they pause only in an emergency) |
+| watch | 50% | repeated prediction snapshots focus on races within 180 minutes; far odds moves threshold 15% |
+| defer | 65% | news polling waits; repeat snapshots within 120 minutes, far odds threshold 20%; Performance stats still refresh |
 | essential | 75% | far-from-post odds are kept only on 25% moves, and predictions more than 90 minutes from post are not re-stored |
-| pause_bulk | 85% | imports, backfills, maintenance, training and backtests refuse to start; the monitor run fails on purpose so GitHub emails an alert |
+| pause_bulk | 85% | imports, backfills, maintenance, training and backtests refuse to start; document processing pauses too; monitoring records a warning without failing the job |
 | emergency | 90% | only results, locks, grading, near-post odds and picks within 30 minutes of post are written |
 
 Never stopped at any level:
@@ -74,6 +74,8 @@ Never stopped at any level:
 * grading;
 * odds near post;
 * first snapshots of races.
+
+Each bulk run is capped at 10,000 writes at budget checkpoints; at 85% even small pending imports wait. Prediction persistence rechecks quota during each card. Monitor and daily summaries report the end-of-run quota; actual command failures still fail GitHub Actions.
 
 **Deferred work** is re-derived on the next run, not queued:
 * a stats cache paused in an emergency is refreshed once `grades` is newer than it;
