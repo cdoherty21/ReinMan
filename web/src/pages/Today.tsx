@@ -1,6 +1,6 @@
 import { Link } from "../main";
 import { postTime, shiftDate, surfaceName, useApi } from "../lib";
-import { HorseNumber, Confidence, DatePicker, Decision, Empty, ErrorBox, Loading, RM, useDateParam } from "./common";
+import { HorseNumber, Confidence, DatePicker, Decision, Empty, ErrorBox, Loading, useDateParam } from "./common";
 
 export type RaceRow = {
   race_id: string; track_id: string; track_name: string | null; race_number: number; post_time: string | null;
@@ -24,9 +24,8 @@ function PickCell({ r }: { r: RaceRow }) {
   if (!r.top1) return <span className="muted">Awaiting analysis</span>;
   return (
     <span className="picks">
-      <RM />
-      <HorseNumber number={r.top1} /> {r.top1_name}
-      <span className="secondary-picks">{r.top2 && <HorseNumber number={r.top2} />}{r.top3 && <HorseNumber number={r.top3} />}</span>
+      <span className="primary-pick"><HorseNumber number={r.top1} /><strong>{r.top1_name || "Top pick"}</strong></span>
+      {(r.top2 || r.top3) && <span className="secondary-picks"><span className="muted small">Next</span>{r.top2 && <HorseNumber number={r.top2} />}{r.top3 && <HorseNumber number={r.top3} />}</span>}
     </span>
   );
 }
@@ -167,7 +166,8 @@ function Outcome({ r }: { r: RaceRow }) {
 
 export function RaceTable({ rows, completed }: { rows: RaceRow[]; completed?: boolean }) {
   return (
-    <div className="table-wrap">
+    <>
+    <div className="table-wrap race-table-desktop">
       <table className="data">
         <thead>
           <tr>
@@ -195,6 +195,24 @@ export function RaceTable({ rows, completed }: { rows: RaceRow[]; completed?: bo
         </tbody>
       </table>
     </div>
+    <ul className="race-list-mobile">
+      {rows.map((r) => (
+        <li key={r.race_id} className={r.is_cancelled ? "cancelled" : ""}>
+          <Link to={`/race/${r.race_id}`} className="race-list-link">
+            <div className="race-list-header">
+              <div><strong>{r.track_id} · R{r.race_number}</strong>{r.post_time && <span className="race-list-time">{postTime(r.post_time)}</span>}</div>
+              {r.confidence && <Confidence level={r.confidence} />}
+            </div>
+            <PickCell r={r} />
+            <div className="race-list-result">
+              {completed || r.winner || r.is_cancelled || r.locked ? <Outcome r={r} /> : <Decision d={r.decision} />}
+              <span className="race-list-arrow" aria-hidden="true">›</span>
+            </div>
+          </Link>
+        </li>
+      ))}
+    </ul>
+    </>
   );
 }
 

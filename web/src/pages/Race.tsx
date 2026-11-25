@@ -1,7 +1,7 @@
 import { Fragment, useState } from "react";
 import { Link } from "../main";
 import { money, odds, pct, postTime, signedPct, stamp, surfaceName, useApi, wagerLabel } from "../lib";
-import { HorseNumber, HorseSelection, Confidence, Decision, ErrorBox, Loading, RM } from "./common";
+import { HorseNumber, HorseSelection, Confidence, Decision, ErrorBox, Loading } from "./common";
 import { distance, ordinal } from "./Today";
 
 type Pick = {
@@ -167,7 +167,7 @@ export function Race({ id }: { id: string }) {
                     return (
                       <Fragment key={x.program_number}>
                         <tr className={`${pick ? "is-pick" : ""} ${r?.scratched ? "scratched" : ""}`} onClick={() => setOpen(isOpen ? null : x.program_number)}>
-                          <td>{pick ? <RM title={`Rein Man's #${x.rank}`} /> : null} {x.rank}</td>
+                          <td>{x.rank}</td>
                           <td className="num"><HorseNumber number={x.program_number} /></td>
                           <td className="horse">
                             <b>{x.horse_name}</b>
