@@ -25,7 +25,7 @@ import traceback
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from . import backtest, documents, grading, ingest, performance, predict, train
+from . import backtest, documents, grading, ingest, news, performance, predict, train
 from .db import Database, SQLiteDatabase, connect
 from .registry import ensure_baseline
 from .sources import configured_sources, get_source
@@ -182,6 +182,7 @@ def monitor(db: Database) -> dict:
                       {"official": 0, "deferred_to": "daily"})
     out["grade_pre"] = job(db, "lock", predict.lock_due, db)
     out["documents"] = job(db, "documents", documents.process_pending, db)
+    out["news"] = job(db, "news", news.refresh, db)
     out["predict"] = job(db, "predict", predict.predict_date, db, d, out["ingest"]["changed_races"])
     out["grade"] = job(db, "grade", grading.grade_all, db)
     if out["results"]["official"] or out["grade"]["predictions_graded"]:
@@ -198,6 +199,7 @@ def daily(db: Database) -> dict:
     for day in (d, _shift(d, 1)):
         out[f"ingest_{day}"] = job(db, "ingest", do_ingest, db, day, sources)
     out["documents"] = job(db, "documents", documents.process_pending, db)
+    out["news"] = job(db, "news", news.refresh, db)
     for day in (d, _shift(d, 1)):
         out[f"predict_{day}"] = job(db, "predict", predict.predict_date, db, day)
     out["lock"] = job(db, "lock", predict.lock_due, db)
@@ -270,7 +272,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="reinman", description="Rein Man — The Intelligence Behind the Odds.")
     ap.add_argument("--db", help="sqlite:///path.db or d1 (default: $REINMAN_DB)")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for c in ("init", "monitor", "lock", "grade", "stats", "backtest", "documents-ready"):
+    for c in ("init", "monitor", "lock", "grade", "stats", "backtest", "documents-ready", "news"):
         sub.add_parser(c)
     for c in ("daily", "train"):
         sub.add_parser(c).add_argument("--force", action="store_true", help="run even if it ran recently")
@@ -312,6 +314,7 @@ def main(argv=None) -> int:
     d = getattr(a, "date", None) or today()
     fn = {
         "monitor": lambda: monitor(db),
+        "news": lambda: job(db, "news", news.refresh, db),
         "daily": lambda: guarded(db, "daily_cycle", 12, a.force, lambda: daily(db)),
         "documents-ready": lambda: documents_ready(db),
         "inspect-documents": lambda: inspect_documents(db, a.id, a.grep, a.max_chars),
@@ -335,3 +338,4 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
