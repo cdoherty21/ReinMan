@@ -57,3 +57,47 @@ def test_bundle_declines_unverified_program_and_quarter_horse():
     assert len(cards) == 1
     assert not cards[0]["complete"]
     assert cards[0]["races"][0]["runners"][0]["program_number"] is None
+
+
+
+def test_news_publisher_and_relevance():
+    xml = b"""<rss><channel><item><title>Sovereignty Resumes Jogging - Paulick Report</title>
+    <link>https://news.google.com/rss/articles/abc</link><source>Paulick Report</source>
+    <pubDate>Tue, 24 Nov 2026 12:00:00 GMT</pubDate></item></channel></rss>"""
+    rows = parse_feed(xml, "Google News: Paulick Report", "2026-11-25T00:00:00.000Z")
+    assert rows[0]["source"] == "Paulick Report"
+    assert rows[0]["title"] == "Sovereignty Resumes Jogging"
+    assert relevant(rows, {"horse_name": "Sovereignty"}, {}) == rows
+    assert relevant(rows + [dict(rows[0], url="https://example.com/duplicate")],
+                    {"horse_name": "Sovereignty"}, {}) == rows
+
+
+def test_news_refresh_deduplicates_and_throttles(db, monkeypatch):
+    from reinman import news
+    monkeypatch.setattr(news, "FEEDS", (("First", "https://example.com/feed"), ("Second", "https://example.com/feed2")))
+    def fake(source, url, now):
+        return [{"url": "https://example.com/story", "source": source, "title": "Horse workout",
+                 "published_at": now, "first_seen_at": now}]
+    monkeypatch.setattr(news, "_fetch_feed", fake)
+    assert news.refresh(db)["unique_headlines"] == 1
+    assert db.scalar("SELECT COUNT(*) FROM racing_news") == 1
+    assert news.refresh(db)["skipped"] == "recent news poll"
+    monkeypatch.setattr(news, "FEEDS", (("Changed", "https://example.com/feed3"),))
+    assert news.refresh(db)["unique_headlines"] == 1
+
+
+def test_news_defers_rate_limited_provider(db, monkeypatch):
+    from reinman import news
+    calls = []
+    monkeypatch.setattr(news, "FEEDS", (
+        ("First", "https://example.com/one"), ("Second", "https://example.com/two"),
+        ("Independent", "https://other.example/feed")))
+    def fake(source, url, now):
+        calls.append(source)
+        if source == "First":
+            raise news.FeedRateLimited(source)
+        return []
+    monkeypatch.setattr(news, "_fetch_feed", fake)
+    result = news.refresh(db)
+    assert calls == ["First", "Independent"]
+    assert result["feeds"]["Second"] == "rate limited"

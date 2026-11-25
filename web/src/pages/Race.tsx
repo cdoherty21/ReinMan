@@ -70,6 +70,14 @@ function RedditDiscussions({ raceId, program }: { raceId: string; program: strin
   );
 }
 
+function EvidenceLine({ value }: { value: string }) {
+  if (value.startsWith("• related headline (")) {
+    const split = value.lastIndexOf(" — https://");
+    if (split >= 0) return <a href={value.slice(split + 3)} target="_blank" rel="noopener noreferrer">{value.slice(2, split)}</a>;
+  }
+  return <>{value}</>;
+}
+
 function PastPerformances({ rows }: { rows: PastPerf[] }) {
   if (!rows.length) return null;
   const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
@@ -237,7 +245,7 @@ export function Race({ id }: { id: string }) {
                                 <div>
                                   <h4>Evidence</h4>
                                   <ul className="factors">
-                                    {x.factors.filter((f) => !f.startsWith("Horse profile · ")).map((f, i) => <li key={i} className={f.startsWith("+") ? "pos" : f.startsWith("−") ? "neg" : ""}>{f}</li>)}
+                                    {x.factors.filter((f) => !f.startsWith("Horse profile · ")).map((f, i) => <li key={i} className={f.startsWith("+") ? "pos" : f.startsWith("−") ? "neg" : ""}><EvidenceLine value={f} /></li>)}
                                   </ul>
                                 </div>
                                 <div>
