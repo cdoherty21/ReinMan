@@ -25,3 +25,9 @@ These branches are kept (not deleted) because they are the only record of what r
 | When (UTC) | Commit | Workflow | What it did |
 |---|---|---|---|
 | ~15:00 | past-performance reader merge | reinman-documents (rescan) | Rescanned all uploads so existing programs (FingerLakes1124.pdf, PRX 4x9PPs) attach past performances (speed figures, running positions, finishes, odds, trip comments) to their runners. Gap-filling only; existing cards are not overwritten. |
+
+## 2026-11-25 — one id per jockey and trainer (from `main`)
+
+| When (UTC) | Commit | Workflow run | What it did |
+|---|---|---|---|
+| 13:28 | `1cd7edb` | reinman-maintenance #1 (`canonicalize-people`) | Rewrote stored `runners.jockey_id` / `trainer_id` from the names with `util.person_key` (surname + first initial), so differently spelled names of one person share an id. Updated 333 jockey name spellings (307 distinct jockey ids afterwards) and 636 trainer name spellings (523 distinct trainer ids afterwards). Names, results and picks were not changed. |
