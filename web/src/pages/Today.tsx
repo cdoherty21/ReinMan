@@ -46,7 +46,7 @@ export function Today() {
       <div className="page-head">
         <div>
           <h1>Today</h1>
-          <p className="muted">Rein Man's Race Card for {new Date(`${date}T12:00:00`).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</p>
+          <p className="muted">Race card for {new Date(`${date}T12:00:00`).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</p>
         </div>
         <DatePicker date={date} onChange={setDate} />
       </div>
@@ -54,8 +54,7 @@ export function Today() {
       {!data && !error && <Loading />}
       {data && races.length === 0 && (
         <Empty>
-          No race cards stored for this date. Cards appear automatically once the data source publishes entries
-          and the monitor job runs. If this persists, check the data source configuration (see SETUP.md).
+          No race cards yet. Check back once entries are available.
         </Empty>
       )}
       {races.length > 0 && (
@@ -77,7 +76,7 @@ export function Today() {
             <section className="card rest">
               <div className="rest-icon" aria-hidden="true">✓</div>
               <div className="rest-text">
-                <h2>That's the card for the day</h2>
+                <h2>The day's racing is complete</h2>
                 <p className="muted">
                   Every race has been run.{plays.length === 0 && " Nothing cleared Rein Man's value threshold, and he's happy to wait."}
                 </p>
@@ -91,7 +90,7 @@ export function Today() {
           {upcoming.length > 0 && <section className="card">
             <h2>Rein Man's Best Bets</h2>
             {plays.length === 0 ? (
-              <p className="muted">No upcoming race clears Rein Man's value threshold right now. He's happy to wait.</p>
+              <p className="muted">No qualifying bets at current prices.</p>
             ) : (
               <ul className="bets">
                 {plays.slice(0, 8).map((r) => (
@@ -134,7 +133,7 @@ export function Today() {
           )}
           {done.length > 0 && (
             <section className="card">
-              <h2>Completed &amp; Results</h2>
+              <h2>Results</h2>
               <RaceTable rows={done} completed />
             </section>
           )}

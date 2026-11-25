@@ -17,7 +17,7 @@ export function RaceCards() {
       <div className="page-head">
         <div>
           <h1>Race Cards</h1>
-          <p className="muted">Every race, every horse — analyzed independently of popularity.</p>
+          <p className="muted">Browse races, entries and Rein Man’s selections by track.</p>
         </div>
         <DatePicker date={date} onChange={setDate} />
       </div>

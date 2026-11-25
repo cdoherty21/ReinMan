@@ -14,7 +14,7 @@ export function Decision({ d }: { d?: string | null }) {
 export function RM({ title = "Rein Man's pick" }: { title?: string }) {
   return (
     <span className="rm-mark" title={title} aria-label={title}>
-      RM
+      <img src="/gentleman-64.png" alt="" width={24} height={24} />
     </span>
   );
 }
@@ -47,7 +47,7 @@ export function useDateParam(): [string, (d: string) => void] {
 }
 
 export function Loading() {
-  return <p className="muted">Rein Man is studying the form…</p>;
+  return <p className="muted">Studying the form…</p>;
 }
 
 export function ErrorBox({ error }: { error: string }) {

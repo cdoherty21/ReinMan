@@ -106,12 +106,12 @@ export function Documents() {
       <div className="page-head">
         <div>
           <h1>Documents</h1>
-          <p className="muted">Give Rein Man more to read: programs, past performances, result pages, notes.</p>
+          <p className="muted">Upload race programs, past performances, results and notes.</p>
         </div>
       </div>
 
       <section className="card">
-        <h2>Upload</h2>
+        <h2>Upload racing data</h2>
         <p className="small muted">
           Upload PDFs, images, Word or Excel files, HTML, TXT, CSV, or Rein Man JSON up to 8 MB each. You can also upload a ZIP up to 64 MB. Rein Man extracts useful racing details
           and builds race cards from supported programs. Linked evidence appears on race pages.
@@ -130,7 +130,7 @@ export function Documents() {
       </section>
 
       <section className="card">
-        <h2>Uploaded</h2>
+        <h2>Document library</h2>
         {error && <ErrorBox error={error} />}
         {!data && !error && <Loading />}
         {data && data.rows.length === 0 && <Empty>No documents yet.</Empty>}

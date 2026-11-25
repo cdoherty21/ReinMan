@@ -42,9 +42,9 @@ export function Performance() {
     <>
       <div className="page-head">
         <div>
-          <h1>Rein Man's Record</h1>
+          <h1>Performance</h1>
           <p className="muted">
-            Graded against official results. Every locked selection counts. {data?.computed_at ? `Updated ${stamp(data.computed_at)}.` : ""}
+            Every locked selection, graded against official results. {data?.computed_at ? `Updated ${stamp(data.computed_at)}.` : ""}
           </p>
         </div>
         <label className="select">
@@ -62,8 +62,7 @@ export function Performance() {
         <>
           {s.picks.graded < 1000 && (
             <p className="notice">
-              Sample size: {s.picks.graded.toLocaleString()} graded races. Rein Man makes no claim of a winning system until results hold
-              over a meaningful sample (and beat the market benchmarks below).
+              Sample size: {s.picks.graded.toLocaleString()} graded races. More results are needed to assess long-term performance.
             </p>
           )}
           <section className="tiles">
@@ -82,7 +81,7 @@ export function Performance() {
 
           <div className="two-col">
             <section className="card">
-              <h2>Versus the Benchmarks</h2>
+              <h2>Market Benchmarks</h2>
               <table className="data compact">
                 <tbody>
                   <tr><td>Rein Man top pick wins</td><td className="num">{pct(s.benchmarks.model_top_pick_win_pct)}</td></tr>
@@ -222,7 +221,7 @@ function Models() {
   if (error) return null;
   return (
     <section className="card">
-      <h2>Models &amp; Audit Trail</h2>
+      <h2>Model Learning &amp; Audit</h2>
       {status.data && (
         <p className="small muted">
           Champion: <b>{status.data.champion?.model_version ?? "—"}</b> · {String(status.data.counts.races)} races stored ({String(status.data.counts.first_date ?? "—")} → {String(status.data.counts.last_date ?? "—")}) ·

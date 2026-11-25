@@ -36,14 +36,14 @@ export function Link({ to, children, className }: { to: string; children: React.
 }
 
 function Logo({ size = 40 }: { size?: number }) {
-  return <img src="/logo.svg" width={size} height={size} alt="" aria-hidden="true" />;
+  return <img src="/gentleman-192.png" className="gentleman-logo" width={size} height={size} alt="" aria-hidden="true" />;
 }
 
 function AuthCard({ children, onSubmit }: { children: React.ReactNode; onSubmit: (e: React.FormEvent) => void }) {
   return (
     <main className="login">
       <form className="login-card" onSubmit={onSubmit}>
-        <Logo size={72} />
+        <Logo size={100} />
         <h1>Rein Man</h1>
         <p className="tagline">The Intelligence Behind the Odds.</p>
         {children}
@@ -96,7 +96,7 @@ function Login({ onDone }: { onDone: () => void }) {
       <button type="button" className="linkish small" onClick={() => { setMode(mode === "login" ? "forgot" : "login"); setErr(null); setMsg(null); }}>
         {mode === "login" ? "Forgot password?" : "Back to sign in"}
       </button>
-      <p className="muted small">Private handicapping system. Authorized use only.</p>
+      <p className="muted small">Private racing intelligence.</p>
     </AuthCard>
   );
 }
@@ -153,14 +153,14 @@ function Shell({ authRequired }: { authRequired: boolean }) {
     <>
       <header className="topbar">
         <Link to="/" className="brand">
-          <Logo size={38} />
+          <Logo size={52} />
           <span>
             <strong>Rein Man</strong>
             <em>The Intelligence Behind the Odds.</em>
           </span>
         </Link>
         <button className="menu-btn" aria-label="Menu" aria-expanded={open} onClick={() => setOpen(!open)}>
-          ☰
+          <span aria-hidden="true">☰</span>
         </button>
         <nav className={open ? "open" : ""} onClick={() => setOpen(false)}>
           {NAV.map(([to, label]) => (
@@ -181,8 +181,8 @@ function Shell({ authRequired }: { authRequired: boolean }) {
       </header>
       <main className="page">{page}</main>
       <footer className="foot">
-        Rein Man records every selection before post and grades it against official results. Past performance is
-        not a promise of future results. Hypothetical wagers are tracked separately from real ones.
+        <div className="footer-brand"><Logo size={34} /><strong>Rein Man</strong></div>
+        Selections are recorded before post time and graded against official results. Historical results cannot predict future returns.
       </footer>
     </>
   );
