@@ -44,3 +44,10 @@ def test_repair_rewrites_old_ids_and_features_match_old_rows(db):
     assert out["jockey_names_updated"] == 1 and out["trainer_names_updated"] == 0
     assert db.scalar("SELECT jockey_id FROM runners WHERE program_number='1'") == "jn:HERNANDEZ A"
     assert canonicalize_people(db)["jockey_names_updated"] == 0
+
+
+def test_us_date():
+    from reinman.util import us_date
+    assert us_date("2026-11-05") == "11/5/2026"
+    assert us_date("2026-11-05T12:00:00Z", short=True) == "11/5/26"
+    assert us_date(None) == ""

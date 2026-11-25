@@ -23,3 +23,15 @@ describe("formatting", () => {
     expect(wagerLabel("EXACTA")).toBe("Exacta");
   });
 });
+
+describe("dates", () => {
+  it("reads month/day/year with the year last", async () => {
+    const { fmtDate, usDates, dayName } = await import("./lib");
+    expect(fmtDate("2026-11-05")).toBe("11/5/2026");
+    expect(fmtDate("2026-11-05", true)).toBe("11/5/26");
+    expect(fmtDate(null)).toBe("—");
+    expect(dayName("2026-11-25")).toBe("Wednesday");
+    expect(usDates("2026-11-23 · PRX R1 · finished 1")).toBe("11/23/2026 · PRX R1 · finished 1");
+    expect(usDates("read at 2026-11-23T10:00:00Z")).toBe("read at 2026-11-23T10:00:00Z");
+  });
+});

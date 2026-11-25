@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, money, pct, signedPct, stamp, todayET, useApi, wagerLabel } from "../lib";
+import { api, fmtDate, money, pct, signedPct, stamp, todayET, useApi, wagerLabel } from "../lib";
 import { HorseSelection, Empty, ErrorBox, Loading } from "./common";
 import { CalibrationChart, PLChart } from "./Charts";
 
@@ -76,7 +76,7 @@ export function Performance() {
 
           <section className="card">
             <h2>Profit / Loss</h2>
-            <PLChart data={s.pl_series} series={[{ key: "wagers_net", label: "Wagers (hypothetical)" }, { key: "top_pick_flat_net", label: "Top pick $2 flat win" }]} />
+            <PLChart data={s.pl_series} series={[{ key: "wagers_net", label: "Wagers (hypothetical)", short: "Wagers" }, { key: "top_pick_flat_net", label: "Top pick $2 flat win", short: "Top pick" }]} />
           </section>
 
           <div className="two-col">
@@ -195,7 +195,7 @@ function ActualWagers({ summary }: { summary: NonNullable<Stats["actual_wagers"]
         <div className="table-wrap"><table className="data compact">
           <thead><tr><th>Date</th><th>Race</th><th>Wager</th><th>Selection</th><th className="num">Amount</th><th className="num">Payout</th></tr></thead>
           <tbody>{data.rows.map((r) => (
-            <tr key={r.id}><td>{r.race_date}</td><td>{r.track_id ?? ""} {r.race_number ? `R${r.race_number}` : ""}</td><td>{wagerLabel(r.wager_type)}</td><td className="mono"><HorseSelection selection={r.selection} /></td><td className="num">{money(r.amount)}</td>
+            <tr key={r.id}><td>{fmtDate(r.race_date)}</td><td>{r.track_id ?? ""} {r.race_number ? `R${r.race_number}` : ""}</td><td>{wagerLabel(r.wager_type)}</td><td className="mono"><HorseSelection selection={r.selection} /></td><td className="num">{money(r.amount)}</td>
               <td className="num">{r.payout != null ? money(r.payout) : <SettleButton id={r.id} onDone={reload} />}</td></tr>
           ))}</tbody>
         </table></div>
@@ -225,7 +225,7 @@ function Models() {
       <h2>Model Learning &amp; Audit</h2>
       {status.data && (
         <p className="small muted">
-          Champion: <b>{status.data.champion?.model_version ?? "—"}</b> · {String(status.data.counts.races)} races stored ({String(status.data.counts.first_date ?? "—")} → {String(status.data.counts.last_date ?? "—")}) ·
+          Champion: <b>{status.data.champion?.model_version ?? "—"}</b> · {String(status.data.counts.races)} races stored ({fmtDate(status.data.counts.first_date as string | null)} → {fmtDate(status.data.counts.last_date as string | null)}) ·
           {" "}{String(status.data.counts.predictions)} snapshots · {String(status.data.counts.locks)} locked · {String(status.data.counts.grades)} graded
         </p>
       )}

@@ -16,7 +16,7 @@ from .models import Ensemble
 from .probability import DEFAULT_LAMBDAS, summarize
 from .registry import champion
 from .selections import fair_odds, runner_factors, select
-from .util import now_iso, parse_iso, stable_hash, to_iso
+from .util import now_iso, parse_iso, stable_hash, to_iso, us_date
 from .wagers import multi_race_ticket, race_wagers, win_watch
 from .wagertypes import LEGS
 
@@ -88,7 +88,7 @@ def analyze_race(db: Database, h, model_version: str, model, artifact: dict, rac
         matched = news.relevant(headlines, runner, evidence[i].get("pedigree", {}))
         relevant_news.append([(item["title"], item["url"]) for item in matched])
         for item in matched:
-            factors[i].append(f"• related headline ({item['source']}, {item['published_at'][:10]}): {item['title']} — {item['url']}")
+            factors[i].append(f"• related headline ({item['source']}, {us_date(item['published_at'])}): {item['title']} — {item['url']}")
     avail = data_availability(X)
     completeness = float(np.mean([avail["morning_line"], avail["horse_history"], avail["jockey_trainer"],
                                   avail["pedigree"], avail["speed_figures"] or avail["horse_history"]]))
