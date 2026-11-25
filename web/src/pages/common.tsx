@@ -10,15 +10,6 @@ export function Decision({ d }: { d?: string | null }) {
   return <span className={`decision ${d}`}>{d === "play" ? "Play" : "Pass"}</span>;
 }
 
-/** Rein Man's mark: used wherever one of his selections appears. */
-export function RM({ title = "Rein Man's pick" }: { title?: string }) {
-  return (
-    <span className="rm-mark" title={title} aria-label={title}>
-      <img src="/gentleman-64.png" alt="" width={24} height={24} />
-    </span>
-  );
-}
-
 export function DatePicker({ date, onChange }: { date: string; onChange: (d: string) => void }) {
   return (
     <div className="datepicker">

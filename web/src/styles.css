@@ -486,3 +486,32 @@ table.data td a { font-weight: 550; }
   .doc-notes details { padding: .4rem 0; border-bottom: 1px solid var(--line); }
   .doc-notes details:last-child { border-bottom: 0; }
 }
+
+/* Consistent pick hierarchy, with one readable race per row on phones. */
+.picks { display: flex; flex-direction: column; align-items: flex-start; gap: .4rem; min-width: 0; }
+.primary-pick { display: flex; gap: .45rem; align-items: center; min-width: 0; }
+.primary-pick .horse-number { flex-shrink: 0; }
+.primary-pick strong { font-weight: 600; overflow-wrap: anywhere; }
+.picks .secondary-picks { margin-left: 0; gap: .3rem; }
+.picks .secondary-picks .horse-number { min-width: 1.45rem; height: 1.35rem; font-size: .72rem; }
+.race-list-mobile { display: none; }
+@media (max-width: 640px) {
+  .race-table-desktop { display: none; }
+  .race-list-mobile { display: block; margin: 0; padding: 0; list-style: none; }
+  .race-list-mobile li + li { border-top: 1px solid var(--line); }
+  .race-list-link { display: block; padding: .85rem 0; color: var(--charcoal); }
+  .race-list-link:hover { text-decoration: none; }
+  .race-list-mobile li:first-child .race-list-link { padding-top: .1rem; }
+  .race-list-mobile li:last-child .race-list-link { padding-bottom: .1rem; }
+  .race-list-header { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: .65rem; }
+  .race-list-header > div { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: .3rem .65rem; }
+  .race-list-header strong { color: var(--green-800); font-size: .94rem; white-space: nowrap; }
+  .race-list-time { color: var(--ink-3); font-size: .8rem; white-space: nowrap; }
+  .race-list-header .conf { flex-shrink: 0; white-space: nowrap; font-size: .72rem; }
+  .race-list-header .conf::before { content: none; }
+  .race-list-link .primary-pick strong { font-size: 1rem; }
+  .race-list-link .secondary-picks { padding-left: 2.2rem; }
+  .race-list-result { display: flex; justify-content: space-between; align-items: center; gap: .35rem; margin-top: .65rem; font-size: .83rem; }
+  .race-list-arrow { color: var(--gold-ink); font-size: 1.3rem; line-height: 1; margin-left: auto; }
+  .race-list-result .outcome { margin-right: .25rem; }
+}
