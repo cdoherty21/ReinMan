@@ -30,46 +30,6 @@ function pastPerformances(r: Runner | undefined): PastPerf[] {
   }
 }
 
-type Discussion = { title: string; url: string; subreddit: string; published_at: string };
-
-function RedditDiscussions({ raceId, program }: { raceId: string; program: string }) {
-  const [status, setStatus] = useState("idle");
-  const [posts, setPosts] = useState<Discussion[]>([]);
-  async function search() {
-    setStatus("loading");
-    setPosts([]);
-    try {
-      const response = await fetch(`/api/race/${encodeURIComponent(raceId)}/reddit/${encodeURIComponent(program)}`,
-        { cache: "no-store" });
-      const result = await response.json() as { status?: string; discussions?: Discussion[] };
-      setStatus(result.status ?? "unavailable");
-      setPosts(result.discussions ?? []);
-    } catch {
-      setStatus("unavailable");
-    }
-  }
-  return (
-    <div className="pp">
-      <h4>Reddit discussions</h4>
-      <button className="btn ghost small" onClick={search} disabled={status === "loading"}>
-        {status === "loading" ? "Searching…" : "Search recent discussions"}
-      </button>
-      {status === "unconfigured" && <p className="small muted">Awaiting approved Reddit API access.</p>}
-      {status === "unavailable" && <p className="small muted">Reddit is temporarily unavailable.</p>}
-      {status === "rate_limited" && <p className="small muted">Please wait a few seconds before searching again.</p>}
-      {status === "ok" && (posts.length ? (
-        <ul className="factors">
-          {posts.map((post) => <li key={post.url}>
-            <a href={post.url} target="_blank" rel="noopener noreferrer">{post.title}</a>
-            <span className="small muted"> · r/{post.subreddit} · {stamp(post.published_at)}</span>
-          </li>)}
-        </ul>
-      ) : <p className="small muted">No recent matching discussions.</p>)}
-      {status === "ok" && posts.length > 0 && <p className="small muted">Community discussion. Verify claims against racing sources.</p>}
-    </div>
-  );
-}
-
 function EvidenceLine({ value }: { value: string }) {
   if (value.startsWith("• related headline (")) {
     const split = value.lastIndexOf(" — https://");
@@ -306,7 +266,6 @@ export function Race({ id }: { id: string }) {
                     </div>
                   </div>
                   <PastPerformances rows={pastPerformances(r)} />
-                  <RedditDiscussions key={`${id}-${x.program_number}`} raceId={id} program={x.program_number} />
                 </section>
               );
             })()}

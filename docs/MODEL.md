@@ -91,6 +91,6 @@ moves a probability directly. Scratch, jockey and equipment talk is shown as *un
 until the official card agrees, and unconfirmed scratch or jockey talk about a race posting
 within 30 minutes earns an extra odds read. Barn and health news is a caution flag and the
 `news_caution` model input (1 if seen before post), which counts only if a trained model
-using it passes the promotion gate. Reddit content is not polled or stored: the Worker's
-on-demand lookup (`docs/REDDIT.md`) is the only Reddit use, as Reddit's policy requires.
+using it passes the promotion gate. Reddit is not used: Reddit closed public Data API
+access requests, so the planned on-demand lookup was removed (`docs/REDDIT.md`).
 

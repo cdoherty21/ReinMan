@@ -1,30 +1,23 @@
-# Reddit discussion lookup
+# Reddit: closed
 
-Rein Man can look up recent public subreddit discussions mentioning a horse in its
-race analysis. The lookup is read-only, limited to configured communities, and runs
-when the user selects Search recent discussions. It uses Reddit's approved OAuth
-Data API and returns linked titles and publication dates.
+**Status: closed on 2026-11-26.** Rein Man does not use Reddit.
 
-## Activation
+Rein Man applied to Reddit for Data API access for a personal, read-only,
+on-demand lookup of public discussions about a horse (support request 18784057). On
+2026-11-26 Reddit replied that it has stopped accepting public Data API access requests
+and that apps must now run on its Developer Platform. That platform hosts apps inside
+Reddit, such as moderator-installed community tools. It does not give an outside
+service like Rein Man a way to read posts, so there is no supported route.
 
-1. Request access for the exact personal-use horse-racing discussion lookup:
-   https://support.reddithelp.com/hc/en-us/requests/new
-2. After Reddit approves the use case, configure an OAuth application according to its
-   approval and create Worker secrets in Cloudflare for the existing rein-man Worker.
-   Set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET to the approved application credentials,
-   REDDIT_USER_AGENT to the registered descriptive agent (for example
-   web:reinman:1.0 (by /u/YOUR_REDDIT_USERNAME)), and REDDIT_APPROVED to true only after approval.
-3. Optionally set REDDIT_SUBREDDITS to the comma-separated communities covered by the
-   approval. The default is horseracing. The lookup is inactive without credentials.
+The race page's "Search recent discussions" button, the Worker endpoint behind it and
+its Reddit client were removed when the case was closed.
 
-Reference: https://support.reddithelp.com/hc/en-us/articles/16160319875092-Reddit-Data-API-Wiki
+Do not substitute unofficial access:
+* Reddit's policy forbids automated reading or storing of posts;
+* its public RSS feeds block cloud servers like the ones Rein Man runs on.
 
-The Worker does not persist Reddit post titles, bodies, author identifiers, or
-discussion-derived features. The lookup is independent of prediction snapshots and
-model training. The shared request limiter allows one lookup every ten seconds and
-the request returns at most ten matches. Reddit content is community discussion
-and can be verified by opening the original thread.
+News and rumours come from the racing news feeds (`engine/reinman/news.py`,
+`news_events.py`).
 
-Any automated polling, model-training or commercial use must be covered by
-Reddit's explicit approval before enabling those use cases.
-https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy
+To reopen: only if Reddit offers sanctioned Data API access again. The previous
+implementation is in git history (`worker/src/reddit.ts`, before this change).
