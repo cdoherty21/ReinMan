@@ -194,3 +194,15 @@ payouts. It checks the horse names and program numbers against the card when one
 and skips races already marked official. Use `--evening` for an evening card with a
 separate race numbering sequence. OTB returns HTTP 403 to some data-center networks,
 which is why the automatic source goes through Firecrawl rather than fetching directly.
+
+### FormFav free race-form enrichment
+
+Get a personal-use key at https://formfav.com/get-api-key and create the Actions secret
+FORMFAV_API_KEY. The existing daily cycle then enriches verified US cards for today and
+tomorrow, after ingestion. FormFav requires no paid subscription for basic form and career
+statistics. Calls are paced and capped at 200 per daily run, with provider refusals stopping
+further requests. Entries are matched by venue, race number, post time and the active field;
+unmatched cards are skipped. Form snapshots are captured before post, preserve existing data,
+and enter the normal model promotion process. Official grading still uses the existing sources.
+Run reinman-daily manually with force to activate the first import. The automation log reports
+matched races and updated runners.
