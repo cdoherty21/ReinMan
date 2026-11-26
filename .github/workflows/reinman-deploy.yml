@@ -33,31 +33,12 @@ jobs:
         run: sed -i "s/00000000-0000-0000-0000-000000000000/${{ secrets.D1_DATABASE_ID }}/" worker/wrangler.jsonc
       - run: npm run db:migrate:remote
       - run: npm run deploy
-      - name: Check whether initial horse enrichment is due
-        id: stables-bootstrap
-        run: |
-          count=$(npx wrangler d1 execute rein-man --remote -c worker/wrangler.jsonc --json --command "SELECT COUNT(*) AS total FROM job_runs WHERE job='stables-photos-v2' AND status='ok'" | jq -r '.[0].results[0].total')
-          test "$count" -ge 0
-          echo "due=$([ "$count" = 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-python@v6
-        if: steps.stables-bootstrap.outputs.due == 'true'
-        with: { python-version: "3.12", cache: pip, cache-dependency-path: engine/pyproject.toml }
-      - name: Bootstrap bounded horse enrichment
-        if: steps.stables-bootstrap.outputs.due == 'true'
-        env:
-          REINMAN_DB: d1
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_TOKEN }}
-          CLOUDFLARE_ANALYTICS_TOKEN: ${{ secrets.CLOUDFLARE_ANALYTICS_TOKEN || secrets.CLOUDFLARE_DEPLOY_TOKEN }}
-          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
-        run: |
-          pip install -e engine
-          reinman stables-photos
       - name: Verify Stables production route and report coverage
         run: |
           curl --fail --silent --show-error --retry 3 https://rein-man.doherty-connor30.workers.dev/stables | grep -q 'Rein Man'
           curl --fail --silent --show-error --retry 3 https://rein-man.doherty-connor30.workers.dev/api/session | jq -e '.authenticated == false and .authRequired == true'
           test "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://rein-man.doherty-connor30.workers.dev/api/stables)" = 401
-          npx wrangler d1 execute rein-man --remote -c worker/wrangler.jsonc --command "SELECT (SELECT COUNT(DISTINCT horse_id) FROM runners) AS recorded_horses, (SELECT COUNT(*) FROM (SELECT horse_key FROM chart_lines UNION SELECT horse_key FROM historical_winners)) AS archive_name_keys, COUNT(CASE WHEN biography IS NOT NULL THEN 1 END) AS externally_verified, COUNT(CASE WHEN image IS NOT NULL THEN 1 END) AS photographs FROM stable_enrichment;"
+          npx wrangler d1 execute rein-man --remote -c worker/wrangler.jsonc --command "SELECT (SELECT COUNT(DISTINCT horse_id) FROM runners) AS recorded_horses, (SELECT COUNT(*) FROM (SELECT horse_key FROM chart_lines UNION SELECT horse_key FROM historical_winners)) AS archive_name_keys, COUNT(CASE WHEN biography IS NOT NULL THEN 1 END) AS externally_verified FROM stable_enrichment;"
       - name: Check immediate document dispatch configuration
         run: |
           npx wrangler secret list -c worker/wrangler.jsonc | jq -r 'if any(.[]; .name == "GITHUB_TOKEN") then "Document dispatch token is configured." else "Document dispatch token is missing. Scheduled scans remain available." end'

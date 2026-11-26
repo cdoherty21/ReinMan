@@ -82,5 +82,7 @@ describe("featured and comparison",()=>{
     const winners=await call("/api/stables?performance=winner");
     expect(winners.horses.map((h:{horse_id:string})=>h.horse_id)).toEqual(["alpha"]);
     expect(winners.horses[0].recent_form).toEqual([1]);
+    expect(winners.horses[0]).toMatchObject({recorded_starts:1,recorded_wins:1,recorded_itm:1,entry:null});
+    expect(winners.horses[0]).not.toHaveProperty("image");
   });
 });
