@@ -18,3 +18,15 @@ def test_image_requires_license_and_attribution():
     assert stables.image_metadata(info, "Q1")["creator"] == "Photographer"
     info["extmetadata"]["LicenseShortName"]["value"] = "All rights reserved"
     assert stables.image_metadata(info, "Q1") is None
+
+
+def test_enrichment_stops_after_source_failure(db, monkeypatch):
+    db.execute("INSERT INTO races(race_id,track_id,race_date,race_number,source) VALUES ('r','T','2026-11-26',1,'test')")
+    db.execute("INSERT INTO runners(race_id,program_number,horse_id,horse_name,sire,extra) VALUES ('r','1','horse','Horse','Sire',?)",
+               ['{"horse_identity":{"age_sex":"4/G"}}'])
+    before = db.rows_written
+    def unavailable(*args):
+        raise OSError("temporarily unavailable")
+    monkeypatch.setattr(stables, "enrich", unavailable)
+    assert stables.refresh(db)["attempted"] == 0
+    assert db.rows_written == before

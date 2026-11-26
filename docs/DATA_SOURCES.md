@@ -101,3 +101,9 @@ Sources: [Wikidata licensing](https://www.wikidata.org/wiki/Wikidata:Licensing),
 [Wikimedia API access policy](https://www.mediawiki.org/wiki/Wikimedia_APIs/Access_policy),
 [API limits](https://www.mediawiki.org/wiki/Wikimedia_APIs/Rate_limits),
 [Commons image metadata](https://www.mediawiki.org/wiki/API:Imageinfo).
+
+The deployment workflow performs the first bounded enrichment when the
+enrichment table is empty. Future enrichments run during the regular daily
+cycle. The optional `reinman stables-refresh` command uses the same D1
+quota guard and cooldown. Wikidata pedigree facts are attributed to their
+source entity, and conflicting dam claims prevent an external match.
