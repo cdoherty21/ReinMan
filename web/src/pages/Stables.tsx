@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Component, type ReactNode, useEffect, useState } from "react";
 import { api, useApi } from "../lib";
 import { Link } from "../main";
 import { ErrorBox, Loading } from "./common";
@@ -36,7 +36,7 @@ function NextRace({horse}:{horse:Horse}) {
 function HorseCard({horse,featured=false,selected,onSelect}:{horse:Horse;featured?:boolean;selected?:boolean;onSelect?:(horse:Horse)=>void}) {
   return <article className="card stable-card"><Portrait horse={horse}/><div className="stable-card-body"><h2><Link to={href(horse)}>{horse.horse_name}</Link></h2><p className="muted small">{[horse.identity.age_sex || (horse.form?.age && horse.form?.sex ? horse.form.age+" · "+horse.form.sex : ""),horse.trainer_name].filter(Boolean).join(" · ") || "Connections unknown"}</p>
     {horse.archive && <p className="small muted">Historical archive · provisional identity</p>}
-    {horse.form?.last20Starts ? <p className="small">Form {horse.form.last20Starts}</p> : horse.recent_form?.length ? <p className="small">Recorded form {horse.recent_form.join(" – ")}</p> : null}
+    {typeof horse.form?.last20Starts === "string" && horse.form.last20Starts ? <p className="small">Form {horse.form.last20Starts}</p> : Array.isArray(horse.recent_form) && horse.recent_form.length ? <p className="small">Recorded form {horse.recent_form.join(" – ")}</p> : null}
     {featured && horse.record && <><p className="stable-class">{horse.record.classification}</p><p>{horse.record.reason}</p>{horse.insights?.strengths.length?<p className="small">{horse.insights.strengths.slice(0,2).join(" · ")}</p>:null}<p className="small muted">{horse.insights?.weaknesses.length?horse.insights.weaknesses.join(" · "):horse.record.weakness}</p><p className="small">Recorded form {horse.record.recent.join(" – ") || "—"} · {horse.record.confidence} evidence</p><NextRace horse={horse}/></>}
     <div className="stable-controls"><Link to={href(horse)}>View profile →</Link>{onSelect && <button className="btn ghost small" onClick={()=>onSelect(horse)}>{selected?"Remove":"Compare"}</button>}</div>
   </div></article>;
@@ -92,4 +92,12 @@ function DirectoryPage() {
   <h2>Horse directory</h2>{counts.data&&<p className="small muted">{counts.data.indexed.toLocaleString()} recorded horses · {counts.data.archive_keys.toLocaleString()} historical name keys · {counts.data.enriched.toLocaleString()} externally verified · {counts.data.photographs.toLocaleString()} photographs</p>}<div className="card stable-search"><select aria-label="Directory source" value={scope} onChange={e=>{setScope(e.target.value);reset()}}><option value="runners">Registered runner records</option><option value="archive">Historical archive</option></select><input aria-label="Search horses" placeholder="Horse, trainer, pedigree, track…" value={q} onChange={e=>setQ(e.target.value)}/><label><input type="checkbox" checked={favorite} onChange={e=>{setFavorite(e.target.checked);reset()}}/> Watchlist</label>{scope==="runners"&&<><label><input type="checkbox" checked={upcoming} onChange={e=>{setUpcoming(e.target.checked);reset()}}/> Upcoming races</label><select aria-label="Surface" value={surface} onChange={e=>{setSurface(e.target.value);reset()}}><option value="">All surfaces</option><option value="D">Dirt</option><option value="T">Turf</option><option value="S">Synthetic</option></select><select aria-label="Sex" value={sex} onChange={e=>{setSex(e.target.value);reset()}}><option value="">All sexes</option>{Object.entries({G:"Gelding",C:"Colt",F:"Filly",M:"Mare",H:"Horse",R:"Ridgling"}).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select><select aria-label="Career performance" value={performance} onChange={e=>{setPerformance(e.target.value);reset()}}><option value="">All performance</option><option value="winner">Recorded winner</option><option value="recent-itm">Top-three finish in last 30 days</option></select><input type="number" min="1" max="30" aria-label="Age" placeholder="Age" value={age} onChange={e=>{setAge(e.target.value);reset()}}/></>}</div>
   {error?<ErrorBox error={error}/>:data?<><div className="stable-grid">{data.horses.map(h=><HorseCard key={h.horse_id} horse={h} selected={selected.some(s=>s.horse_id===h.horse_id)} onSelect={toggle}/>)}{!data.horses.length&&<p>No matching horses.</p>}</div><div className="stable-controls"><button className="btn ghost" disabled={!previous.length} onClick={()=>{setAfter(previous[previous.length-1]||"");setPrevious(previous.slice(0,-1))}}>Previous</button><button className="btn primary" disabled={!data.after} onClick={()=>{setPrevious([...previous,after]);setAfter(data.after||"")}}>Next</button></div></>:<Loading/>}</>;
 }
-export function Stables({id}:{id?:string}) { return id?<Profile key={id} id={id}/>:<DirectoryPage/>; }
+class StablesErrorBoundary extends Component<{children: ReactNode}, {failed:boolean}> {
+  state = {failed:false};
+  static getDerivedStateFromError() { return {failed:true}; }
+  render() {
+    if(this.state.failed) return <section className="card"><h1>The Stables</h1><p>Horse records could not be displayed. Please retry or return to the directory.</p><button className="btn primary" onClick={()=>this.setState({failed:false})}>Retry</button> <Link to="/">Return to Today</Link></section>;
+    return this.props.children;
+  }
+}
+export function Stables({id}:{id?:string}) { return <StablesErrorBoundary key={id??"directory"}>{id?<Profile key={id} id={id}/>:<DirectoryPage/>}</StablesErrorBoundary>; }

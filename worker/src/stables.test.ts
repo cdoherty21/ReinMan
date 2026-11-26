@@ -75,6 +75,7 @@ describe("featured and comparison",()=>{
     sqlite.exec("INSERT INTO result_finishers(race_id,program_number,horse_name,finish_position) VALUES ('past','1','Alpha',1),('past','2','Beta',2)");
     const featured=await call("/api/stables/featured");
     expect(featured).toHaveLength(2);
+    expect(featured.map((h:{recent_form:number[]})=>h.recent_form)).toEqual([[1],[2]]);
     expect(featured.every((horse:{next:unknown})=>horse.next===null)).toBe(true);
     const comparison=await call("/api/stables/compare?id=alpha&id=beta");
     expect(comparison.headToHead[0].map((h:{finish:number})=>h.finish)).toEqual([1,2]);
