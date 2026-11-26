@@ -38,9 +38,10 @@ async function profile(db: D1Database, id: string) {
   const history = await rows(db, `SELECT r.race_id, r.race_date, r.track_id, r.race_number, r.surface,
     r.distance_yards, r.track_condition, r.race_class, r.purse, r.weather_desc, r.temp_f,
     ru.jockey_name, ru.trainer_name, ru.post_position, ru.medication, ru.equipment, ru.live_odds,
-    ru.scratched, ru.extra, f.finish_position
+    ru.scratched, ru.extra, COALESCE(f.finish_position,json_extract(c.data,'$.finish')) AS finish_position, c.data AS chart_data
     FROM runners ru JOIN races r USING(race_id)
     LEFT JOIN result_finishers f ON f.race_id=ru.race_id AND f.program_number=ru.program_number
+    LEFT JOIN chart_lines c ON ru.horse_id LIKE 'name:%' AND c.horse_key=substr(ru.horse_id,6) AND c.race_date=r.race_date AND c.track_id=r.track_id AND c.race_number=r.race_number AND c.horse_name=ru.horse_name COLLATE NOCASE
     WHERE ru.horse_id=? ORDER BY r.race_date DESC, r.race_number DESC LIMIT 500`, [id]);
   const workouts = new Map<string, Row>(), past = new Map<string, Row>();
   for (const h of history) {
@@ -90,7 +91,42 @@ async function profile(db: D1Database, id: string) {
     }
   }
   const form = parse(horse.extra).formfav ?? {};
-  return { ...horse, form, workouts: [...workouts.values()].sort((a,b)=>String(b.date).localeCompare(String(a.date))), pastPerformances, evidence: latestEvidence?.factors ? JSON.parse(String(latestEvidence.factors)) : [], image: parse(horse.image), biography: parse(horse.biography), identity: parse(horse.extra).horse_identity ?? {}, record, history: history.map(h => ({ ...h, details: parse(h.extra), extra: undefined })), next, opponents, news, preferences, extra: undefined };
+  return { ...horse, form, workouts: [...workouts.values()].sort((a,b)=>String(b.date).localeCompare(String(a.date))), pastPerformances, evidence: latestEvidence?.factors ? JSON.parse(String(latestEvidence.factors)) : [], image: parse(horse.image), biography: parse(horse.biography), identity: parse(horse.extra).horse_identity ?? {}, record, history: history.map(h => ({ ...h, details: {...parse(h.extra),chart:parse(h.chart_data)}, extra: undefined, chart_data: undefined })), next, opponents, news, preferences, extra: undefined };
+}
+
+// Archive-only keys are provisional. Never attach records to a permanent runner ID
+// merely because the name matches. Winner-only archives do not supply losing starts.
+async function archiveProfile(db: D1Database, key: string) {
+  const chart = await rows(db, "SELECT * FROM chart_lines WHERE horse_key=? ORDER BY race_date DESC LIMIT 500", [key]);
+  const winners = await rows(db, "SELECT * FROM historical_winners WHERE horse_key=? ORDER BY race_date DESC LIMIT 500", [key]);
+  if (!chart.length && !winners.length) return null;
+  const history = chart.map(c => {
+    const d = parse(c.data);
+    return {race_id:"archive:"+String(c.document_id)+":"+String(c.race_date)+":"+String(c.race_number),race_date:c.race_date,
+      track_id:c.track_id,race_number:c.race_number,surface:d.surface,distance_yards:d.distance_yards,
+      finish_position:d.finish,jockey_name:d.jockey,details:d,source:"Imported chart"};
+  });
+  const winnerRecords = winners.map(w=>({date:w.race_date,track:w.track_id,race_number:w.race_number,source:"Winner archive",...parse(w.data)}));
+  const record = assessment(history.filter(h=>Number(h.finish_position)>0).map(h=>Number(h.finish_position)));
+  const favorite = await one(db,"SELECT 1 AS favorite FROM stable_favorites WHERE horse_id=?",["archive:"+key]);
+  return {horse_id:"archive:"+key,horse_name:(chart[0]??winners[0]).horse_name, archive:true, identity:{},
+    favorite:favorite?.favorite??0,record,history,winnerRecords,news:[],next:null,opponents:[],preferences:{},
+    evidence:["Historical name key requires corroborating identity before linking to an active horse.", "Winner-only observations are excluded from career rates."]};
+}
+async function archiveDirectory(db: D1Database, url: URL) {
+  const cursor = url.searchParams.get("after") ?? "";
+  const q = (url.searchParams.get("q")??"").trim().slice(0,100);
+  const term = "%"+q.replace(/[\\%_]/g,"\\$&")+"%";
+  const records = await rows(db, `WITH archived AS (
+    SELECT horse_key, horse_name, race_date, track_id, data FROM chart_lines WHERE horse_key>?
+    UNION ALL SELECT horse_key, horse_name, race_date, track_id, data FROM historical_winners WHERE horse_key>?
+  ) SELECT 'archive:'||horse_key AS horse_id,horse_name, MAX(race_date) AS race_date, track_id,
+    EXISTS(SELECT 1 FROM stable_favorites f WHERE f.horse_id='archive:'||horse_key) AS favorite
+    FROM archived WHERE (horse_name LIKE ? ESCAPE '\\' OR data LIKE ? ESCAPE '\\' OR track_id LIKE ? ESCAPE '\\')
+    AND (?=0 OR EXISTS(SELECT 1 FROM stable_favorites f WHERE f.horse_id='archive:'||horse_key))
+    GROUP BY horse_key ORDER BY horse_key LIMIT 25`,
+    [cursor.replace(/^archive:/,""),cursor.replace(/^archive:/,""),term,term,term,url.searchParams.get("favorites")==="1"?1:0]);
+  return {horses:records.slice(0,24).map(h=>({...h,archive:true,identity:{}})),after:records.length===25?records[23].horse_id:null};
 }
 
 export async function stables(req: Request, db: D1Database, url: URL): Promise<Response> {
@@ -98,6 +134,7 @@ export async function stables(req: Request, db: D1Database, url: URL): Promise<R
   if (path === "/api/stables/counts" && req.method === "GET") {
     return json(await one(db, `SELECT
       (SELECT COUNT(DISTINCT horse_id) FROM runners) AS indexed,
+      (SELECT COUNT(*) FROM (SELECT horse_key FROM chart_lines UNION SELECT horse_key FROM historical_winners)) AS archive_keys,
       COUNT(CASE WHEN biography IS NOT NULL THEN 1 END) AS enriched,
       COUNT(CASE WHEN image IS NOT NULL THEN 1 END) AS photographs FROM stable_enrichment`));
   }
@@ -132,6 +169,7 @@ export async function stables(req: Request, db: D1Database, url: URL): Promise<R
     return json(profiles.filter(p => p !== null).sort((a,b) => Number(b.record.improving)-Number(a.record.improving) || b.record.starts-a.record.starts).slice(0,5).map(({history,workouts,pastPerformances,news,preferences,evidence,...p})=>p));
   }
   if (path === "/api/stables" && req.method === "GET") {
+    if (url.searchParams.get("scope")==="archive") return json(await archiveDirectory(db,url));
     const q = (url.searchParams.get("q") ?? "").trim().slice(0,100);
     const cursor = url.searchParams.get("after") ?? "";
     const term = "%" + q.replace(/[\\%_]/g, "\\$&") + "%";
@@ -157,12 +195,13 @@ export async function stables(req: Request, db: D1Database, url: URL): Promise<R
     if (match[2] && req.method === "POST") {
       const body = await req.json() as { favorite?: boolean };
       if (typeof body.favorite !== "boolean") return json({error:"Expected favorite boolean"},400);
-      if (!await one(db,"SELECT horse_id FROM runners WHERE horse_id=? LIMIT 1",[id])) return json({error:"Horse not found"},404);
+      const exists = id.startsWith("archive:") ? await one(db,"SELECT horse_key FROM chart_lines WHERE horse_key=? UNION SELECT horse_key FROM historical_winners WHERE horse_key=? LIMIT 1",[id.slice(8),id.slice(8)]) : await one(db,"SELECT horse_id FROM runners WHERE horse_id=? LIMIT 1",[id]);
+      if (!exists) return json({error:"Horse not found"},404);
       await db.prepare(body.favorite ? "INSERT OR IGNORE INTO stable_favorites(horse_id) VALUES (?)" : "DELETE FROM stable_favorites WHERE horse_id=?").bind(id).run();
       return json({favorite:body.favorite});
     }
     if (!match[2] && req.method === "GET") {
-      const data = await profile(db,id);
+      const data = id.startsWith("archive:") ? await archiveProfile(db,id.slice(8)) : await profile(db,id);
       return data ? json(data) : json({error:"Horse not found"},404);
     }
   }
