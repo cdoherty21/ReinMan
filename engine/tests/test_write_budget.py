@@ -188,3 +188,11 @@ def test_performance_page_keeps_refreshing_under_budget_pressure(db, monkeypatch
     out = cli.monitor(db)
     assert "deferred" not in out.get("stats", {}), out.get("stats")
     assert db.scalar("SELECT computed_at FROM stats_cache WHERE key='overall'") > "2026-11-24"
+
+
+def test_stables_enrichment_cooldown_is_idempotent(db, monkeypatch):
+    from reinman import stables
+    ingest.store_card(db, _card(_future(120)), "puntersedge")
+    monkeypatch.setattr(stables, "enrich", lambda *args: (None, None, None))
+    assert _writes(db, lambda: stables.refresh(db)) > 0
+    assert _writes(db, lambda: stables.refresh(db)) == 0

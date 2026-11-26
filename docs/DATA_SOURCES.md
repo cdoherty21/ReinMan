@@ -84,3 +84,20 @@ bypasses paywalls, and never fabricates missing data.
 - Brisnet chart file structure — https://support.brisnet.com/hc/en-us/articles/360056090772-Data-File-Structure-for-Comprehensive-Charts-File
 - DRF charts — https://www1.drf.com:443/products/charts/charts.html
 - NWS API — https://api.weather.gov
+
+## The Stables enrichment
+
+The existing daily cycle checks at most five horse identities against the
+Wikidata Action API, prioritizing active horses and watchlist entries. A match
+requires the same name, foaling year derived from the documented race-age
+record, and independently reported sire; ambiguous candidates are left
+unverified. Verified P18 media is checked using the Commons Imageinfo API.
+Only supported openly licensed images with creator and source metadata are
+displayed, with attribution. The pipeline stops on network errors, respects the
+existing D1 background quota and schedules incomplete records for retry after
+30 days. It requires no additional credentials.
+
+Sources: [Wikidata licensing](https://www.wikidata.org/wiki/Wikidata:Licensing),
+[Wikimedia API access policy](https://www.mediawiki.org/wiki/Wikimedia_APIs/Access_policy),
+[API limits](https://www.mediawiki.org/wiki/Wikimedia_APIs/Rate_limits),
+[Commons image metadata](https://www.mediawiki.org/wiki/API:Imageinfo).
