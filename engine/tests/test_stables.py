@@ -16,6 +16,11 @@ def test_image_requires_license_and_attribution():
             "extmetadata": {"LicenseShortName": {"value": "CC BY-SA 4.0"},
                             "Artist": {"value": "Photographer"}}}
     assert stables.image_metadata(info, "Q1")["creator"] == "Photographer"
+    info["thumburl"] = "https://thumb.wikimedia.org/wikipedia/commons/thumb/example.jpg"
+    assert stables.image_metadata(info, "Q1")["thumbnail"] == info["thumburl"]
+    info["thumburl"] = "https://thumb.wikimedia.org.evil.example/test.jpg"
+    assert stables.image_metadata(info, "Q1") is None
+    info["thumburl"] = "https://upload.wikimedia.org/thumb.jpg"
     info["extmetadata"]["LicenseShortName"]["value"] = "All rights reserved"
     assert stables.image_metadata(info, "Q1") is None
 

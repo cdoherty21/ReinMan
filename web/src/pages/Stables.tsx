@@ -22,7 +22,7 @@ type Directory = {horses:Horse[];after:string|null};
 const href = (horse: Horse) => "/stables/" + encodeURIComponent(horse.horse_id);
 function Portrait({horse}:{horse:Horse}) {
   const [failed,setFailed]=useState(false);
-  if(!failed && horse.image?.thumbnail?.startsWith("https://upload.wikimedia.org/")) return <figure className="stable-photo"><img loading="lazy" src={horse.image.thumbnail} alt={horse.horse_name} onError={()=>setFailed(true)}/><figcaption><a href={horse.image.source} target="_blank" rel="noreferrer">{horse.image.creator}</a> · <a href={horse.image.license_url?.startsWith("https://") ? horse.image.license_url : horse.image.source} target="_blank" rel="noreferrer">{horse.image.license}</a></figcaption></figure>;
+  if(!failed && horse.image?.thumbnail && /^https:\/\/(?:upload|thumb)\.wikimedia\.org\//.test(horse.image.thumbnail)) return <figure className="stable-photo"><img loading="lazy" src={horse.image.thumbnail} alt={horse.horse_name} onError={()=>setFailed(true)}/><figcaption><a href={horse.image.source} target="_blank" rel="noreferrer">{horse.image.creator}</a> · <a href={horse.image.license_url?.startsWith("https://") ? horse.image.license_url : horse.image.source} target="_blank" rel="noreferrer">{horse.image.license}</a></figcaption></figure>;
   return <div className="stable-portrait" role="img" aria-label="Photograph unavailable"><svg aria-hidden="true" viewBox="0 0 80 80" width="72" height="72"><path fill="currentColor" d="M19 65h44v5H19zm7-4 4-21-10 3-7-8 20-21 3-10 7 10c17 3 23 19 17 35l-3 12z"/><circle cx="37" cy="23" r="2" fill="#173022"/></svg><span>Photograph unavailable</span></div>;
 }
 function NextRace({horse}:{horse:Horse}) {

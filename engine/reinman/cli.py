@@ -293,7 +293,7 @@ def daily(db: Database) -> dict:
     out["grade"] = job(db, "grade", grading.grade_all, db)
     out["stats"] = (job(db, "stats", performance.refresh_stats, db)
                     if quota.may(db, "standard") else deferred("stats refresh", quota.status(db)))
-    out["stables_photos"] = guarded(db, "stables-photos", 20, False, lambda: stables.refresh_photos(db)) if quota.may(db, "background") else deferred("horse photographs", quota.status(db))
+    out["stables_photos"] = guarded(db, "stables-photos-v2", 20, False, lambda: stables.refresh_photos(db)) if quota.may(db, "background") else deferred("horse photographs", quota.status(db))
     out["stables"] = job(db, "stables", stables.refresh, db) if quota.may(db, "background") else deferred("horse enrichment", quota.status(db))
     out["quota"] = quota.status(db)
     return out
@@ -446,7 +446,7 @@ def main(argv=None) -> int:
     fn = {
         "monitor": lambda: monitor(db),
         "free-pp-collect": lambda: bulk(db, "free-pp-collect", lambda: job(db, "free_pp_collect", free_pp.collect, db, quiet=True)),
-        "stables-photos": lambda: guarded(db, "stables-photos", 20, False, lambda: stables.refresh_photos(db)),
+        "stables-photos": lambda: guarded(db, "stables-photos-v2", 20, False, lambda: stables.refresh_photos(db)),
         "stables-refresh": lambda: guarded(db, "stables", 20, False, lambda: stables.refresh(db)),
         "news": lambda: job(db, "news", news.refresh, db),
         "canonicalize-people": lambda: bulk(db, "canonicalize-people",
