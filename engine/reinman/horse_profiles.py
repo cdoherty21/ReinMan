@@ -182,6 +182,22 @@ def evidence(profile: dict) -> list[str]:
             add("Recent form", f"{us_date(result['date'])} · {result['track']} · finished {result['finish']}{field}")
     else:
         add("Recent form", "Complete prior race finishes are unavailable.")
+    form = context.get("formfav") or {}
+    if form:
+        add("Sources", "FormFav race form (captured before post).")
+        if form.get("age") and form.get("sex"):
+            add("Identity", f"{form['age']}-year-old {form['sex']}")
+        for key in ("sire", "dam"):
+            if form.get(key) and not context.get(key):
+                add("Pedigree", f"{key.title()}: {form[key]}")
+        if form.get("last20Starts") or form.get("form"):
+            add("Recent form", f"FormFav finishing sequence (newest last): {form.get('last20Starts') or form['form']}")
+        for key, label in (("overall", "Career"), ("track", "This track"), ("distance", "This distance"),
+                           ("trackDistance", "Track and distance"), ("firstUp", "First after spell"),
+                           ("secondUp", "Second after spell")):
+            sample = (form.get("stats") or {}).get(key) or {}
+            if sample.get("starts"):
+                add("Race fit", f"FormFav {label}: {sample.get('wins', 'unknown')} wins in {sample['starts']} starts.")
     figures = context.get("reported_figures") or context.get("beyer_figures") or []
     if figures:
         add("Recent form", "Reported last three Beyer figures (newest first): " + " → ".join("—" if v is None else str(v) for v in figures))
