@@ -492,6 +492,24 @@ const routes: [string, RegExp, Handler][] = [
   ],
   [
     "GET",
+    /^\/api\/free-pp$/,
+    async (_req, env) => {
+      const counts = await first(env.DB, `SELECT COUNT(*) AS discovered,
+        COUNT(DISTINCT u.document_id) AS downloaded,
+        COUNT(DISTINCT CASE WHEN d.status='processed' THEN d.id END) AS processed,
+        COUNT(CASE WHEN u.status IN ('blocked','error') OR d.status='error' THEN 1 END) AS errors
+        FROM free_pp_urls u LEFT JOIN documents d ON d.id=u.document_id`);
+      const sources = await all(env.DB, "SELECT url, status, error FROM free_pp_urls WHERE status IN ('blocked','error') ORDER BY url LIMIT 50");
+      const last = await first<{finished_at: string; details: string}>(env.DB, "SELECT finished_at, details FROM job_runs WHERE job='free_pp_collect' ORDER BY id DESC LIMIT 1");
+      const horses = await first(env.DB, `SELECT COUNT(*) AS total FROM (
+        SELECT horse_key FROM chart_lines WHERE document_id IN (SELECT document_id FROM free_pp_urls)
+        UNION SELECT horse_key FROM historical_winners WHERE document_id IN (SELECT document_id FROM free_pp_urls)
+      )`);
+      return json({ counts, sources, last, horses, credits: last ? parseJSON(last.details) : null });
+    },
+  ],
+  [
+    "GET",
     /^\/api\/documents$/,
     async (_req, env) => {
       const rows = (
@@ -837,5 +855,6 @@ export default {
     }
   },
 } satisfies ExportedHandler<Env>;
+
 
 

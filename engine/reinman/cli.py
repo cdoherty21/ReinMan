@@ -397,7 +397,7 @@ def main(argv=None) -> int:
     ap.add_argument("--db", help="sqlite:///path.db or d1 (default: $REINMAN_DB)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     for c in ("init", "monitor", "lock", "grade", "stats", "backtest", "documents-ready", "news",
-              "canonicalize-people", "d1-usage", "stables-refresh"):
+              "canonicalize-people", "d1-usage", "stables-refresh", "free-pp-collect"):
         sub.add_parser(c)
     for c in ("daily", "train"):
         sub.add_parser(c).add_argument("--force", action="store_true", help="run even if it ran recently")
@@ -441,8 +441,10 @@ def main(argv=None) -> int:
         return 0
     ensure_baseline(db)
     d = getattr(a, "date", None) or today()
+    from . import free_pp
     fn = {
         "monitor": lambda: monitor(db),
+        "free-pp-collect": lambda: bulk(db, "free-pp-collect", lambda: job(db, "free_pp_collect", free_pp.collect, db, quiet=True)),
         "stables-refresh": lambda: guarded(db, "stables", 20, False, lambda: stables.refresh(db)),
         "news": lambda: job(db, "news", news.refresh, db),
         "canonicalize-people": lambda: bulk(db, "canonicalize-people",
@@ -472,4 +474,5 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
 

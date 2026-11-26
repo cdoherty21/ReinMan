@@ -1,0 +1,51 @@
+name: reinman-free-pp
+on:
+  workflow_dispatch:
+    inputs:
+      archive:
+        description: Export collected documents as ZIP files
+        type: boolean
+        default: false
+  workflow_run:
+    workflows: [reinman-deploy]
+    branches: [main]
+    types: [completed]
+  schedule:
+    - cron: "35 10 * * *"
+concurrency:
+  group: reinman-db-writer
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  scan:
+    # Scheduled runs stay off until the repository variable REINMAN_ENABLED is "true".
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'schedule' && vars.REINMAN_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults: { run: { working-directory: engine } }
+    env:
+      FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+      FREE_PP_APPROVED_SOURCES: ${{ vars.FREE_PP_APPROVED_SOURCES }}
+      REINMAN_DB: d1
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_TOKEN }}
+      D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+      # Read-only use: today's account-wide D1 rows written (engine/reinman/quota.py).
+      CLOUDFLARE_ANALYTICS_TOKEN: ${{ secrets.CLOUDFLARE_ANALYTICS_TOKEN || secrets.CLOUDFLARE_DEPLOY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: engine/pyproject.toml }
+      - run: pip install -e .
+      - run: (command -v pdftotext && command -v tesseract) || (sudo apt-get update && sudo apt-get install -y poppler-utils tesseract-ocr)
+      - run: reinman free-pp-collect
+        env:
+          FREE_PP_ARCHIVE_DIR: ${{ inputs.archive && 'archives' || '' }}
+      - uses: actions/upload-artifact@v4
+        if: inputs.archive == true
+        with:
+          name: free-pp-archives
+          path: engine/archives/*.zip
+          if-no-files-found: ignore
+          retention-days: 1
