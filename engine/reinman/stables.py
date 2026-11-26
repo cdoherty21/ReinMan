@@ -59,7 +59,7 @@ def image_metadata(info, entity_id):
     source = info.get("descriptionurl")
     if not re.fullmatch(r"(?:CC BY(?:-SA)? [1-4]\.0|CC0|Public domain)", license_name, re.I):
         return None
-    if not creator or not url or not url.startswith("https://upload.wikimedia.org/") or not source or not source.startswith("https://commons.wikimedia.org/"):
+    if not creator or not url or not url.startswith(("https://upload.wikimedia.org/", "https://thumb.wikimedia.org/")) or not source or not source.startswith("https://commons.wikimedia.org/"):
         return None
     return {"thumbnail": url, "url": info.get("url"), "source": source, "creator": creator,
             "license": license_name, "license_url": value("LicenseUrl"), "wikidata_id": entity_id,

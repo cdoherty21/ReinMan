@@ -36,7 +36,7 @@ jobs:
       - name: Check whether initial horse enrichment is due
         id: stables-bootstrap
         run: |
-          count=$(npx wrangler d1 execute rein-man --remote -c worker/wrangler.jsonc --json --command 'SELECT COUNT(*) AS total FROM stable_enrichment WHERE image IS NOT NULL' | jq -r '.[0].results[0].total')
+          count=$(npx wrangler d1 execute rein-man --remote -c worker/wrangler.jsonc --json --command 'SELECT COUNT(*) AS total FROM job_runs WHERE job=\"stables-photos-v2\" AND status=\"ok\"' | jq -r '.[0].results[0].total')
           test "$count" -ge 0
           echo "due=$([ "$count" = 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v6
