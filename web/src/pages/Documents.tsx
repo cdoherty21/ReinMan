@@ -111,6 +111,7 @@ export function Documents() {
         </div>
       </div>
 
+      <CollectorStatus />
       <section className="card">
         <h2>Upload racing data</h2>
         <p className="small muted">
@@ -201,3 +202,22 @@ function DocDetail({ id, summary }: { id: number; summary: Summary | null }) {
   );
 }
 
+
+
+function CollectorStatus() {
+  const { data, error } = useApi<{counts: {discovered: number; downloaded: number; processed: number; errors: number};
+    sources: {url: string; status: string; error: string}[];
+    last: {finished_at: string; details: string} | null; horses: {total: number}; credits: {firecrawl_credits_reserved?: number} | null}>("/api/free-pp");
+  return <section className="card">
+    <h2>Free past performance collector</h2>
+    {error && <ErrorBox error={error} />}
+    {!data && !error && <Loading />}
+    {data && <>
+      <p className="small">{data.counts.discovered} URLs discovered · {data.counts.downloaded} documents downloaded · {data.counts.processed} processed · {data.counts.errors} source errors · {data.horses.total} horses in historical records</p>
+      <p className="small">Firecrawl page credits reserved last run: {data.credits?.firecrawl_credits_reserved ?? 0}</p>
+      {data.last && <p className="small muted">Last collection {stamp(data.last.finished_at)}</p>}
+      {data.sources.length > 0 && <ul className="small">{data.sources.map(source =>
+        <li key={source.url}>{source.url} · {source.error}</li>)}</ul>}
+    </>}
+  </section>;
+}

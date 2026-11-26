@@ -280,7 +280,7 @@ def _try_canonical(db: Database, text: str) -> dict | None:
 
 def _original_bytes(db: Database, doc_id: int) -> bytes | None:
     chunks = []
-    for start in range(0, 50, 3):
+    for start in range(0, 210, 3):
         rows = db.query(
             "SELECT hex(bytes) AS encoded FROM document_file_chunks WHERE document_id=? AND seq>=? ORDER BY seq LIMIT 3",
             [doc_id, start],
@@ -568,5 +568,6 @@ def process_queue(db: Database, rescan: bool = False) -> dict:
             for day, changes in sorted(future.items())
         )
     return total
+
 
 
