@@ -66,7 +66,7 @@ async function profile(db: D1Database, id: string) {
     JOIN prediction_runners pr ON pr.prediction_id=p.prediction_id AND pr.program_number=ru.program_number
     WHERE ru.horse_id=? AND pr.factors IS NOT NULL ORDER BY r.race_date DESC LIMIT 1`, [id]);
   const next = await one(db, `SELECT r.race_id, r.race_date, r.track_id, r.race_number, r.post_time, r.surface,
-    r.distance_yards, ru.program_number, ru.live_odds, ru.ml_odds,
+    r.distance_yards, r.source, ru.program_number, ru.live_odds, ru.ml_odds, ru.updated_at AS odds_recorded_at,
     pr.win_prob, pr.fair_odds, p.confidence, pr.factors, pr.odds_source
     FROM runners ru JOIN races r USING(race_id)
     LEFT JOIN predictions p ON p.prediction_id=(SELECT MAX(prediction_id) FROM predictions WHERE race_id=r.race_id AND created_at < r.post_time)
@@ -149,6 +149,22 @@ export async function stables(req: Request, db: D1Database, url: URL): Promise<R
       SELECT 'news:'||ru.horse_id||':'||n.url, ru.horse_id,ru.horse_name,n.title,n.published_at,ru.race_id
       FROM stable_favorites f JOIN runners ru ON ru.horse_id=f.horse_id JOIN news_events n USING(race_id,program_number)
       WHERE n.role='horse' AND n.published_at>=date('now','-14 days')
+      UNION ALL
+      SELECT 'value:'||ru.race_id||':'||ru.horse_id,ru.horse_id,ru.horse_name,
+        'Potential value opportunity',p.created_at,ru.race_id
+      FROM stable_favorites f JOIN runners ru ON ru.horse_id=f.horse_id JOIN races r USING(race_id)
+      JOIN predictions p ON p.prediction_id=(SELECT MAX(prediction_id) FROM predictions WHERE race_id=r.race_id)
+      JOIN prediction_runners pr ON pr.prediction_id=p.prediction_id AND pr.program_number=ru.program_number
+      WHERE ${upcoming} AND ru.live_odds IS NOT NULL AND pr.win_prob*(1+ru.live_odds)>1.1
+      UNION ALL
+      SELECT 'assessment:'||ru.race_id||':'||ru.horse_id||':'||p.prediction_id,ru.horse_id,ru.horse_name,
+        'Race assessment changed',p.created_at,ru.race_id
+      FROM stable_favorites f JOIN runners ru ON ru.horse_id=f.horse_id JOIN races r USING(race_id)
+      JOIN predictions p ON p.prediction_id=(SELECT MAX(prediction_id) FROM predictions WHERE race_id=r.race_id)
+      JOIN prediction_runners pr ON pr.prediction_id=p.prediction_id AND pr.program_number=ru.program_number
+      JOIN predictions prior ON prior.prediction_id=(SELECT MAX(prediction_id) FROM predictions WHERE race_id=r.race_id AND prediction_id<p.prediction_id)
+      JOIN prediction_runners old ON old.prediction_id=prior.prediction_id AND old.program_number=ru.program_number
+      WHERE ${upcoming} AND (ABS(pr.win_prob-old.win_prob)>=0.10 OR p.confidence<>prior.confidence)
     ) SELECT DISTINCT events.* FROM events LEFT JOIN stable_notification_reads USING(event_id)
       WHERE stable_notification_reads.event_id IS NULL ORDER BY date DESC LIMIT 30`));
   }

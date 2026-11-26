@@ -7,7 +7,7 @@ type Horse = {
   horse_id: string; horse_name: string; trainer_name?: string; jockey_name?: string;
   sire?: string; dam?: string; dam_sire?: string; favorite: number;
   identity: Record<string, string>; image?: {thumbnail?:string;source?:string;creator?:string;license?:string;license_url?:string}; biography?: {foaling_year?:number;source?:string}; record?: {starts:number; wins:number; places:number; shows:number; recent:number[]; classification:string; confidence:string; reason:string; weakness:string};
-  next?: {race_id:string; race_date:string; track_id:string; race_number:number; post_time:string; surface:string; distance_yards:number; win_prob?:number; fair_odds?:number; live_odds?:number; ml_odds?:number; verdict:string; confidence?:string; factors?:string};
+  next?: {race_id:string; race_date:string; track_id:string; race_number:number; post_time:string; source?:string; odds_recorded_at?:string; surface:string; distance_yards:number; win_prob?:number; fair_odds?:number; live_odds?:number; ml_odds?:number; verdict:string; confidence?:string; factors?:string};
   archive?:boolean; winnerRecords?:Record<string,unknown>[];
   form?:{age?:number;sex?:string;sire?:string;dam?:string;country?:string;careerPrizeMoney?:number;last20Starts?:string;form?:string;stats?:Record<string,{starts?:number;wins?:number;places?:number}>};
   evidence?:string[]; workouts?:Record<string,unknown>[]; pastPerformances?:Record<string,unknown>[];
@@ -25,7 +25,8 @@ function Portrait({horse}:{horse:Horse}) {
 }
 function NextRace({horse}:{horse:Horse}) {
   const next=horse.next;
-  return next ? <div className="stable-next"><strong>{next.verdict}</strong><p><Link to={"/race/"+encodeURIComponent(next.race_id)}>{next.track_id} · Race {next.race_number} · {next.race_date}</Link></p><p className="small">{new Date(next.post_time).toLocaleString()} · {next.surface || "Surface unknown"}</p><p className="small">Win probability {next.win_prob == null ? "—" : (next.win_prob*100).toFixed(1)+"%"} · Fair odds {next.fair_odds?.toFixed(2) ?? "—"} · Live odds {next.live_odds?.toFixed(2) ?? "—"} {next.live_odds==null && next.ml_odds!=null ? "· Morning line "+next.ml_odds : ""}</p>
+  return next ? <div className="stable-next"><strong>{next.verdict}</strong><p><Link to={"/race/"+encodeURIComponent(next.race_id)}>{next.track_id} · Race {next.race_number} · {next.race_date}</Link></p><p className="small">{new Date(next.post_time).toLocaleString()} · {next.surface || "Surface unknown"}</p><p className="small">Win probability {next.win_prob == null ? "—" : (next.win_prob*100).toFixed(1)+"%"} · Fair odds {next.fair_odds?.toFixed(2) ?? "—"} · Last recorded live odds {next.live_odds?.toFixed(2) ?? "—"} {next.live_odds==null && next.ml_odds!=null ? "· Morning line "+next.ml_odds : ""}</p>
+  {next.source && <p className="small muted">Race feed: {next.source} · Model confidence: {next.confidence||"Unknown"}</p>}
   {horse.opponents?.length ? <p className="small">Opponents: {horse.opponents.map(o=>o.horse_name).join(", ")}</p>:null}</div> : <p className="muted">Awaiting next entry.</p>;
 }
 function HorseCard({horse,featured=false,selected,onSelect}:{horse:Horse;featured?:boolean;selected?:boolean;onSelect?:(horse:Horse)=>void}) {
@@ -57,7 +58,7 @@ function Profile({id}:{id:string}) {
 }
 function Compare({horse}:{horse:Horse}) {
   const {data}=useApi<Horse>("/api/stables/horse/"+encodeURIComponent(horse.horse_id));
-  return <article className="card"><h2><Link to={href(horse)}>{horse.horse_name}</Link></h2>{data?.record?<><p>{data.record.starts} starts · {data.record.wins} wins</p><p>Form {data.record.recent.join(" – ")}</p><p>{data.record.reason}</p><NextRace horse={data}/></>:<Loading/>}</article>;
+  return <article className="card"><h2><Link to={href(horse)}>{horse.horse_name}</Link></h2>{data?.record?<><p>{data.record.starts} starts · {data.record.wins} wins</p><p>Form {data.record.recent.join(" – ")}</p><p>{data.record.reason}</p><p>Pedigree · {data.sire||data.form?.sire||"Unknown sire"} / {data.dam||data.form?.dam||"Unknown dam"}</p><p>Trainer · {data.trainer_name||"Unknown"}<br/>Jockey · {data.jockey_name||"Unknown"}</p>{Object.entries(data.preferences||{}).filter(([key])=>key.startsWith("Surface")||key.startsWith("Distance")).slice(0,8).map(([k,v])=><div className="stable-bar" key={k}><span>{k}</span><progress value={v.itm} max={v.starts}/><span>{v.itm}/{v.starts}</span></div>)}<NextRace horse={data}/></>:<Loading/>}</article>;
 }
 function DirectoryPage() {
   const counts=useApi<{indexed:number;archive_keys:number;enriched:number;photographs:number}>("/api/stables/counts");
