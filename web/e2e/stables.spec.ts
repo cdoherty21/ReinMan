@@ -16,7 +16,7 @@ for (const width of [390, 768, 1280]) {
       let data: unknown = { horses: [horse], after: null };
       if (path === "/api/session") data = { authenticated: true, authRequired: true };
       else if (path.endsWith("/featured")) data = [{...horse, recent_form: "[1,2,3]"}];
-      else if (path.endsWith("/counts")) data = { indexed: 1, archive_keys: 0, enriched: 0, photographs: 0 };
+      else if (path.endsWith("/counts")) data = { indexed: 1, archive_keys: 0, enriched: 0 };
       else if (path.endsWith("/notifications")) data = [];
       else if (path.endsWith("/horse/fixture")) data = horse;
       else if (path.endsWith("/compare")) data = { horses: [horse], headToHead: [] };
@@ -25,6 +25,8 @@ for (const width of [390, 768, 1280]) {
     await page.goto("/stables");
     await expect(page.getByRole("heading", {name:"The Stables",exact:true})).toBeVisible();
     await expect(page.getByRole("heading", {name:"Horse directory"})).toBeVisible();
+    await expect(page.locator(".stable-summary-label").first()).toContainText("Recent form");
+    await expect(page.getByText("Photograph unavailable",{exact:true})).toHaveCount(0);
     await expect(page.getByRole("link", {name:"Example Runner"}).first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await page.getByRole("button", {name:"Compare",exact:true}).click();

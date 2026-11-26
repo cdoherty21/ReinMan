@@ -87,23 +87,14 @@ bypasses paywalls, and never fabricates missing data.
 
 ## The Stables enrichment
 
-The existing daily cycle checks at most five horse identities against the
+The regular daily cycle checks at most five horse identities against the
 Wikidata Action API, prioritizing active horses and watchlist entries. A match
-requires the same name, foaling year derived from the documented race-age
-record, and independently reported sire; ambiguous candidates are left
-unverified. Verified P18 media is checked using the Commons Imageinfo API.
-Only supported openly licensed images with creator and source metadata are
-displayed, with attribution. The pipeline stops on network errors, respects the
-existing D1 background quota and schedules incomplete records for retry after
-30 days. It requires no additional credentials.
+requires the same name, documented foaling year and independently reported
+sire; conflicting dam claims prevent an external match. Unverified records
+remain eligible for retry after 30 days. The optional `reinman stables-refresh`
+command uses the same D1 quota guard and cooldown. No additional credentials
+are required.
 
 Sources: [Wikidata licensing](https://www.wikidata.org/wiki/Wikidata:Licensing),
 [Wikimedia API access policy](https://www.mediawiki.org/wiki/Wikimedia_APIs/Access_policy),
-[API limits](https://www.mediawiki.org/wiki/Wikimedia_APIs/Rate_limits),
-[Commons image metadata](https://www.mediawiki.org/wiki/API:Imageinfo).
-
-The deployment workflow performs the first bounded enrichment when the
-enrichment table is empty. Future enrichments run during the regular daily
-cycle. The optional `reinman stables-refresh` command uses the same D1
-quota guard and cooldown. Wikidata pedigree facts are attributed to their
-source entity, and conflicting dam claims prevent an external match.
+[API limits](https://www.mediawiki.org/wiki/Wikimedia_APIs/Rate_limits).

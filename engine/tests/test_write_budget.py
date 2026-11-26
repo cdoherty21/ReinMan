@@ -194,7 +194,7 @@ def test_stables_enrichment_cooldown_is_idempotent(db, monkeypatch):
     from reinman import stables
     ingest.store_card(db, _card(_future(120)), "puntersedge")
     db.execute("UPDATE runners SET sire='Sire', extra=?", ['{"horse_identity":{"age_sex":"4/G"}}'])
-    monkeypatch.setattr(stables, "enrich", lambda *args: (None, None, None))
+    monkeypatch.setattr(stables, "enrich", lambda *args: (None, None))
     assert _writes(db, lambda: stables.refresh(db)) > 0
     assert _writes(db, lambda: stables.refresh(db)) == 0
 
