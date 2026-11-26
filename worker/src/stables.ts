@@ -14,6 +14,12 @@ const parseList = (value:unknown):string[] => {
   try { const list=typeof value==="string"?JSON.parse(value):value; return Array.isArray(list)?list.filter((v):v is string=>typeof v==="string"):[]; }
   catch { return []; }
 };
+const parseForm = (value:unknown):number[] => {
+  try {
+    const list = typeof value === "string" ? JSON.parse(value) : value;
+    return Array.isArray(list) ? list.filter((n):n is number=>typeof n==="number" && Number.isFinite(n)) : [];
+  } catch { return []; }
+};
 const upcoming = `r.status = 'scheduled' AND r.is_cancelled = 0 AND ru.scratched = 0
   AND r.post_time > strftime('%Y-%m-%dT%H:%M:%fZ','now')`;
 const summary = `SELECT ru.horse_id, ru.horse_name, ru.trainer_name, ru.jockey_name, ru.sire, ru.dam, ru.dam_sire,
@@ -122,7 +128,7 @@ async function profile(db: D1Database, id: string) {
     speed:evidence.filter(line=>line.includes("speed figure")||line.includes("Beyer figures")||line.includes("pace figures")),
     fitness:evidence.filter(line=>line.includes("Race fit |")).slice(0,10)
   };
-  return { ...horse, horse_name:horse.horse_name, horse_id:horse.horse_id, form, identity, provenance, connections:{owners:[...owners],trainers:[...trainers],jockeys:[...jockeys]}, insights, speedFigures:figures, workouts: [...workouts.values()].sort((a,b)=>String(b.date).localeCompare(String(a.date))), pastPerformances, evidence, image: parse(horse.image), biography: parse(horse.biography), record, history: history.map(h => ({ ...h, details: {...parse(h.extra),chart:parse(h.chart_data)}, extra: undefined, chart_data: undefined } as Row)), next, opponents, news, preferences, extra: undefined };
+  return { ...horse, horse_name:horse.horse_name, horse_id:horse.horse_id, recent_form:parseForm(horse.recent_form), form, identity, provenance, connections:{owners:[...owners],trainers:[...trainers],jockeys:[...jockeys]}, insights, speedFigures:figures, workouts: [...workouts.values()].sort((a,b)=>String(b.date).localeCompare(String(a.date))), pastPerformances, evidence, image: parse(horse.image), biography: parse(horse.biography), record, history: history.map(h => ({ ...h, details: {...parse(h.extra),chart:parse(h.chart_data)}, extra: undefined, chart_data: undefined } as Row)), next, opponents, news, preferences, extra: undefined };
 }
 
 // Archive-only keys are provisional. Never attach records to a permanent runner ID
@@ -247,7 +253,7 @@ export async function stables(req: Request, db: D1Database, url: URL): Promise<R
     if (url.searchParams.get("favorites")==="1") filters.push("EXISTS(SELECT 1 FROM stable_favorites f WHERE f.horse_id=ru.horse_id)");
     if (url.searchParams.get("upcoming")==="1") filters.push(upcoming);
     const horses = await rows(db, summary + " WHERE " + filters.join(" AND ") + " GROUP BY ru.horse_id HAVING MAX(r.race_date) IS NOT NULL ORDER BY ru.horse_id LIMIT 25", args);
-    return json({ horses: horses.slice(0,24).map(h => ({...h, image: parse(h.image), biography: parse(h.biography), form: parse(h.extra).formfav ?? {}, recent_form: JSON.parse(String(h.recent_form||"[]")), identity: parse(h.extra).horse_identity ?? {}, extra: undefined })), after: horses.length===25 ? horses[23].horse_id : null });
+    return json({ horses: horses.slice(0,24).map(h => ({...h, image: parse(h.image), biography: parse(h.biography), form: parse(h.extra).formfav ?? {}, recent_form: parseForm(h.recent_form), identity: parse(h.extra).horse_identity ?? {}, extra: undefined })), after: horses.length===25 ? horses[23].horse_id : null });
   }
   if(path==="/api/stables/compare" && req.method==="GET"){
     const ids=[...new Set(url.searchParams.getAll("id"))].slice(0,4);

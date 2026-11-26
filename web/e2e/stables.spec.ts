@@ -15,7 +15,7 @@ for (const width of [390, 768, 1280]) {
       const path = new URL(route.request().url()).pathname;
       let data: unknown = { horses: [horse], after: null };
       if (path === "/api/session") data = { authenticated: true, authRequired: true };
-      else if (path.endsWith("/featured")) data = [horse];
+      else if (path.endsWith("/featured")) data = [{...horse, recent_form: "[1,2,3]"}];
       else if (path.endsWith("/counts")) data = { indexed: 1, archive_keys: 0, enriched: 0, photographs: 0 };
       else if (path.endsWith("/notifications")) data = [];
       else if (path.endsWith("/horse/fixture")) data = horse;
