@@ -25,6 +25,7 @@ from . import figures as rm_figures, historical, horse_profiles, medication
 from .ingest import canonical_people
 from .util import days_between, norm_name
 from .sources.tracks import track_info
+from .sources import formfav
 
 OFF_TRACK = ("SLOPPY", "MUDDY", "SLOP", "MUD", "WET", "SEALED", "HEAVY", "YIELDING", "SOFT")
 NAN = float("nan")
@@ -60,6 +61,7 @@ FEATURES = [
     "news_caution",
     # Rein Man's own speed and pace figures from result charts (figures.py)
     *rm_figures.FEATURES,
+    *formfav.FEATURES,
 ]
 RACE_CONSTANT = {"field_size", "off_track", "is_turf", "is_route"}
 RICH = {f for f in FEATURES if f.startswith("pp_")}
@@ -429,6 +431,10 @@ def featurize_race(h: HistoryBuilder, race: dict, runners: list[dict]) -> tuple[
         def observed_before_post(value):
             return bool(value.get("observed_at") and race.get("post_time")
                         and value["observed_at"] < race["post_time"] and value.get("race_date") == d)
+        form = ex.get("formfav") or {}
+        if observed_before_post(form):
+            f.update(formfav.model_features(form))
+            ev["formfav"] = form
         if observed_before_post(summary) and summary.get("figures"):
             figures = summary["figures"][:3]
             f["beyer_latest"], f["beyer_best3"] = float(figures[0]), float(max(figures))
@@ -542,6 +548,7 @@ def featurize_race(h: HistoryBuilder, race: dict, runners: list[dict]) -> tuple[
             "previous_track": ev.get("previous_track"), "travel_miles": ev.get("travel_miles"),
             "rest_days": ev.get("rest_days"), "workouts_30d": ev.get("workouts_30d"),
             "last_work_date": ev.get("last_work_date"), "dam_sire": pedigree.get("dam_sire"),
+            "formfav": ev.get("formfav"),
             "identity": ex.get("horse_identity") or {}, "medication_report": ex.get("medication_report"),
             "research_source": ex.get("research_source"), "beyer_figures": ev.get("beyer_figures"),
             "beyer_source": summary.get("source") if observed_before_post(summary) else None,

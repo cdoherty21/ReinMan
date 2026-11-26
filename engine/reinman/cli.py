@@ -33,6 +33,7 @@ from .db import Database, SQLiteDatabase, connect
 from .registry import ensure_baseline
 from .sources import configured_sources, get_source
 from .sources.canonical import CanonicalFile
+from .sources.formfav import FormFav, enrich as enrich_formfav
 from .sources.otb import read_result
 from .util import date_range, norm_name, now_iso
 
@@ -278,6 +279,10 @@ def daily(db: Database) -> dict:
                         if quota.may(db, "standard") else deferred("documents", quota.status(db)))
     out["news"] = (job(db, "news", news.refresh, db)
                    if quota.may(db, "background") else deferred("news poll", quota.status(db)))
+    formfav = FormFav()
+    if formfav.key and quota.may(db, "standard"):
+        for day in (d, _shift(d, 1)):
+            out[f"formfav_{day}"] = job(db, "formfav", enrich_formfav, db, day, formfav)
     for day in (d, _shift(d, 1)):
         out[f"news_events_{day}"] = (job(db, "news_events", news_events.refresh, db, day)
                                      if quota.may(db, "standard") else deferred("news events", quota.status(db)))
