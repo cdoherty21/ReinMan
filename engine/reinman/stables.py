@@ -66,7 +66,7 @@ def image_metadata(info, entity_id):
             "confidence": "Verified name, foaling year and sire"}
 
 
-def enrich(name, year, sire):
+def enrich(name, year, sire, dam=None):
     if not year or not sire:
         return None, None, None
     search = request(WIKIDATA, action="wbsearchentities", search=name, language="en", limit=5)
@@ -87,8 +87,37 @@ def enrich(name, year, sire):
     if len(matches_found) != 1:
         return None, None, None
     entity_id, entity = matches_found[0]
+    source = "https://www.wikidata.org/wiki/" + entity_id
     biography = {"name": label(entity), "foaling_year": year, "sire": sire,
-                 "source": "https://www.wikidata.org/wiki/" + entity_id, "confidence": "Verified name, foaling year and sire"}
+                 "source": source, "confidence": "Verified name, foaling year and sire"}
+    born = claim(entity, "P569")
+    if isinstance(born, dict) and born.get("precision", 0) >= 11:
+        biography["foaling_date"] = born.get("time", "").lstrip("+").split("T")[0]
+    related = {name: value["id"] for name, prop in
+               (("sire", "P22"), ("dam", "P25"), ("reported_sex", "P21"), ("reported_country", "P17"))
+               if isinstance((value := claim(entity, prop)), dict) and value.get("id")}
+    relatives = request(WIKIDATA, action="wbgetentities", ids="|".join(set(related.values())),
+                        props="labels|claims", languages="en").get("entities", {}) if related else {}
+    for name, identity in related.items():
+        if text := label(relatives.get(identity, {})):
+            biography[name] = text
+    if dam and biography.get("dam") and norm_name(dam) != norm_name(biography["dam"]):
+        return None, None, None
+    ancestors = {}
+    for parent in ("sire", "dam"):
+        relative = relatives.get(related.get(parent), {})
+        for relation, prop in (("sire", "P22"), ("dam", "P25")):
+            value = claim(relative, prop)
+            if isinstance(value, dict) and value.get("id"):
+                ancestors[parent+"_"+relation] = value["id"]
+    if ancestors:
+        entries = request(WIKIDATA, action="wbgetentities", ids="|".join(set(ancestors.values())),
+                          props="labels", languages="en").get("entities", {})
+        for name, identity in ancestors.items():
+            if text := label(entries.get(identity, {})):
+                biography[name] = text
+    biography["fact_sources"] = {name: source for name in biography if name not in ("source", "confidence")}
+
     image = None
     file = claim(entity, "P18")
     if isinstance(file, str):
@@ -108,17 +137,21 @@ def refresh(db, limit=5):
     stamp = now.isoformat()
     # Prioritize recently entered horses and the personal watchlist. One attempt per cooldown.
     candidates = db.query("""
-      SELECT ru.horse_id, ru.horse_name, ru.sire, ru.extra, r.race_date
+      SELECT ru.horse_id, ru.horse_name, ru.sire, ru.dam, ru.extra, r.race_date
       FROM runners ru JOIN races r USING(race_id)
       LEFT JOIN stable_enrichment e USING(horse_id)
       LEFT JOIN stable_favorites f USING(horse_id)
       WHERE (e.horse_id IS NULL OR (e.image IS NULL AND e.retry_after<=?))
+      AND (ru.sire IS NOT NULL OR json_extract(CASE WHEN json_valid(ru.extra) THEN ru.extra ELSE '{}' END,'$.formfav.sire') IS NOT NULL)
+      AND (json_extract(CASE WHEN json_valid(ru.extra) THEN ru.extra ELSE '{}' END,'$.horse_identity.age_sex') IS NOT NULL
+        OR json_extract(CASE WHEN json_valid(ru.extra) THEN ru.extra ELSE '{}' END,'$.formfav.age') IS NOT NULL)
       GROUP BY ru.horse_id
       ORDER BY CASE WHEN MAX(r.race_date)>=date('now') THEN 0
                     WHEN f.horse_id IS NOT NULL THEN 1 ELSE 2 END,
                MAX(r.race_date) DESC LIMIT ?
     """, [stamp, min(5, max(0, limit))])
     acquired = 0
+    attempted = 0
     for row in candidates:
         if not quota.may(db, "background"):
             break
@@ -129,13 +162,14 @@ def refresh(db, limit=5):
             age = re.fullmatch(r"(\d+)[/ ]([GCFMHR])", str(identity.get("age_sex", "")).upper())
             reported_age = int(age[1]) if age else form.get("age")
             year = int(row["race_date"][:4]) - reported_age if type(reported_age) is int and 0 < reported_age < 40 else None
-            entity_id, biography, image = enrich(row["horse_name"], year, row["sire"] or form.get("sire"))
+            entity_id, biography, image = enrich(row["horse_name"], year, row["sire"] or form.get("sire"), row["dam"] or form.get("dam"))
         except (OSError, ValueError, KeyError):
             # A service outage stops this run instead of retrying against a throttled source.
             break
+        attempted += 1
         acquired += bool(image)
         db.sync("stable_enrichment", [{"horse_id": row["horse_id"], "wikidata_id": entity_id,
                  "biography": json.dumps(biography) if biography else None,
                  "image": json.dumps(image) if image else None, "status": "verified" if entity_id else "unverified",
                  "retry_after": (now + timedelta(days=30)).isoformat(), "retrieved_at": stamp}], ["horse_id"])
-    return {"attempted": len(candidates), "photographs": acquired}
+    return {"attempted": attempted, "photographs": acquired}

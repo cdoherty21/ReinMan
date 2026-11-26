@@ -10,10 +10,17 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 const parse = (value: unknown): Row => {
   try { return typeof value === "string" ? JSON.parse(value) ?? {} : {}; } catch { return {}; }
 };
+const parseList = (value:unknown):string[] => {
+  try { const list=typeof value==="string"?JSON.parse(value):value; return Array.isArray(list)?list.filter((v):v is string=>typeof v==="string"):[]; }
+  catch { return []; }
+};
 const upcoming = `r.status = 'scheduled' AND r.is_cancelled = 0 AND ru.scratched = 0
   AND r.post_time > strftime('%Y-%m-%dT%H:%M:%fZ','now')`;
 const summary = `SELECT ru.horse_id, ru.horse_name, ru.trainer_name, ru.jockey_name, ru.sire, ru.dam, ru.dam_sire,
-  ru.extra, r.race_date, r.track_id, e.image, e.biography,
+  ru.extra, r.race_date, r.track_id, e.image, e.biography,e.retrieved_at,
+  (SELECT json_group_array(finish_position) FROM (SELECT sf.finish_position FROM runners sr
+    JOIN races rr USING(race_id) JOIN result_finishers sf ON sf.race_id=sr.race_id AND sf.program_number=sr.program_number
+    WHERE sr.horse_id=ru.horse_id AND sr.scratched=0 AND sf.finish_position>0 ORDER BY rr.race_date DESC LIMIT 3)) AS recent_form,
   EXISTS(SELECT 1 FROM stable_favorites f WHERE f.horse_id=ru.horse_id) AS favorite
   FROM runners ru JOIN races r USING(race_id) LEFT JOIN stable_enrichment e USING(horse_id)`;
 
@@ -37,7 +44,7 @@ async function profile(db: D1Database, id: string) {
   if (!horse) return null;
   const history = await rows(db, `SELECT r.race_id, r.race_date, r.track_id, r.race_number, r.surface,
     r.distance_yards, r.track_condition, r.race_class, r.purse, r.weather_desc, r.temp_f,
-    ru.jockey_name, ru.trainer_name, ru.post_position, ru.medication, ru.equipment, ru.live_odds,
+    ru.jockey_name, ru.trainer_name, ru.post_position, ru.medication, ru.equipment, ru.live_odds, ru.sire, ru.dam, ru.dam_sire,
     ru.scratched, ru.extra, COALESCE(f.finish_position,json_extract(c.data,'$.finish')) AS finish_position, c.data AS chart_data
     FROM runners ru JOIN races r USING(race_id)
     LEFT JOIN result_finishers f ON f.race_id=ru.race_id AND f.program_number=ru.program_number
@@ -66,7 +73,7 @@ async function profile(db: D1Database, id: string) {
     JOIN prediction_runners pr ON pr.prediction_id=p.prediction_id AND pr.program_number=ru.program_number
     WHERE ru.horse_id=? AND pr.factors IS NOT NULL ORDER BY r.race_date DESC LIMIT 1`, [id]);
   const next = await one(db, `SELECT r.race_id, r.race_date, r.track_id, r.race_number, r.post_time, r.surface,
-    r.distance_yards, r.source, ru.program_number, ru.live_odds, ru.ml_odds, ru.updated_at AS odds_recorded_at,
+    r.distance_yards, r.track_condition, r.weather_desc, r.temp_f, r.race_class, r.source, ru.program_number, ru.live_odds, ru.ml_odds, ru.updated_at AS odds_recorded_at, ru.post_position, ru.jockey_name, ru.trainer_name,
     pr.win_prob, pr.fair_odds, p.confidence, pr.factors, pr.odds_source
     FROM runners ru JOIN races r USING(race_id)
     LEFT JOIN predictions p ON p.prediction_id=(SELECT MAX(prediction_id) FROM predictions WHERE race_id=r.race_id AND created_at < r.post_time)
@@ -76,6 +83,7 @@ async function profile(db: D1Database, id: string) {
   if (next) {
     opponents = await rows(db, "SELECT horse_name FROM runners WHERE race_id=? AND horse_id<>? AND scratched=0 ORDER BY post_position", [next.race_id, id]);
     const price = next.live_odds;
+    next.factors = parseList(next.factors);
     next.verdict = next.win_prob == null ? "Insufficient Data" : price == null ? "Price Dependent" : Number(next.win_prob)*(1+Number(price))>1.1 ? "Strong Interest" : Number(next.win_prob)*(1+Number(price))<1 ? "Avoid" : "Neutral";
   }
   const news = await rows(db, `SELECT DISTINCT n.title,n.source,n.url,n.published_at,n.kind,n.sentence
@@ -90,8 +98,31 @@ async function profile(db: D1Database, id: string) {
       sample.starts++; if (Number(h.finish)<=3) sample.itm++;
     }
   }
-  const form = parse(horse.extra).formfav ?? {};
-  return { ...horse, form, workouts: [...workouts.values()].sort((a,b)=>String(b.date).localeCompare(String(a.date))), pastPerformances, evidence: latestEvidence?.factors ? JSON.parse(String(latestEvidence.factors)) : [], image: parse(horse.image), biography: parse(horse.biography), identity: parse(horse.extra).horse_identity ?? {}, record, history: history.map(h => ({ ...h, details: {...parse(h.extra),chart:parse(h.chart_data)}, extra: undefined, chart_data: undefined })), next, opponents, news, preferences, extra: undefined };
+  const identity:Row = {}, owners = new Set<string>(), trainers = new Set<string>(), jockeys = new Set<string>();
+  const provenance:Record<string,unknown> = {};
+  for(const h of history){
+    const extra = parse(h.extra), known = extra.horse_identity as Row | undefined;
+    if(known && typeof known==="object"){
+      for(const [key,value] of Object.entries(known)) if(value && !identity[key]) {
+        identity[key]=value; provenance[key]={source:known.source || extra.research_source || "stored race card",date:h.race_date};
+      }
+      if(typeof known.owner==="string") owners.add(known.owner);
+    }
+    if(typeof h.trainer_name==="string") trainers.add(h.trainer_name);
+    if(typeof h.jockey_name==="string") jockeys.add(h.jockey_name);
+  }
+  const form = history.map(h=>parse(h.extra).formfav).find(Boolean) ?? {};
+  for(const key of ["sire","dam","dam_sire"]) if(!horse[key]) horse[key]=history.find(h=>h[key])?.[key];
+  const figures=completed.map(h=>Number(h.speed_fig || parse(h.chart_data).speed_fig)).filter(n=>Number.isFinite(n)&&n>0);
+  const evidence=parseList(latestEvidence?.factors);
+  const insights = { strengths:evidence.filter(line=>line.startsWith("+ ")).slice(0,4),
+    weaknesses:evidence.filter(line=>line.startsWith("− ")).slice(0,4),
+    behavior:evidence.filter(line=>line.includes("Racing behavior |")||line.includes("Trip history |")),
+    preparation:evidence.filter(line=>line.includes("Preparation |")||line.includes("travel")||line.includes("miles from last race")),
+    speed:evidence.filter(line=>line.includes("speed figure")||line.includes("Beyer figures")||line.includes("pace figures")),
+    fitness:evidence.filter(line=>line.includes("Race fit |")).slice(0,10)
+  };
+  return { ...horse, horse_name:horse.horse_name, horse_id:horse.horse_id, form, identity, provenance, connections:{owners:[...owners],trainers:[...trainers],jockeys:[...jockeys]}, insights, speedFigures:figures, workouts: [...workouts.values()].sort((a,b)=>String(b.date).localeCompare(String(a.date))), pastPerformances, evidence, image: parse(horse.image), biography: parse(horse.biography), record, history: history.map(h => ({ ...h, details: {...parse(h.extra),chart:parse(h.chart_data)}, extra: undefined, chart_data: undefined } as Row)), next, opponents, news, preferences, extra: undefined };
 }
 
 // Archive-only keys are provisional. Never attach records to a permanent runner ID
@@ -181,8 +212,18 @@ export async function stables(req: Request, db: D1Database, url: URL): Promise<R
       JOIN prediction_runners pr ON pr.prediction_id=p.prediction_id AND pr.program_number=ru.program_number
       WHERE ${upcoming} AND (pr.rank<=2 OR pr.program_number=p.dark_horse OR pr.program_number=p.value_pick)
       GROUP BY ru.horse_id ORDER BY score DESC LIMIT 6`);
+    if(candidates.length<6){
+      const excluded=candidates.map(c=>c.horse_id);
+      const placeholders=excluded.map(()=>"?").join(",");
+      const fallback=await rows(db,`SELECT ru.horse_id, MAX(r.race_date) AS last_date
+        FROM races r JOIN runners ru USING(race_id) JOIN result_finishers f ON f.race_id=ru.race_id AND f.program_number=ru.program_number
+        WHERE r.race_date>=date('now','-120 days') AND f.finish_position>0 AND ru.scratched=0
+        ${excluded.length?"AND ru.horse_id NOT IN ("+placeholders+")":""}
+        GROUP BY ru.horse_id ORDER BY COUNT(*) DESC,last_date DESC LIMIT ?`,[...excluded,6-candidates.length]);
+      candidates.push(...fallback);
+    }
     const profiles = await Promise.all(candidates.map(c => profile(db, String(c.horse_id))));
-    return json(profiles.filter(p => p !== null).sort((a,b) => Number(b.record.improving)-Number(a.record.improving) || b.record.starts-a.record.starts).slice(0,5).map(({history,workouts,pastPerformances,news,preferences,evidence,...p})=>p));
+    return json(profiles.filter(p => p !== null).sort((a,b) => Number(b.record.improving)-Number(a.record.improving) || Number(!!b.next)-Number(!!a.next) || b.record.starts-a.record.starts).slice(0,5).map(({history,workouts,pastPerformances,news,preferences,evidence,...p})=>p));
   }
   if (path === "/api/stables" && req.method === "GET") {
     if (url.searchParams.get("scope")==="archive") return json(await archiveDirectory(db,url));
@@ -200,10 +241,29 @@ export async function stables(req: Request, db: D1Database, url: URL): Promise<R
     if (age && /^\d{1,2}$/.test(age)) { filters.push("json_extract(CASE WHEN json_valid(ru.extra) THEN ru.extra ELSE '{}' END,'$.horse_identity.age_sex') LIKE ?"); args.push(age+"/%"); }
     const sex = url.searchParams.get("sex");
     if (sex && /^[GCFMHR]$/.test(sex)) { filters.push("json_extract(CASE WHEN json_valid(ru.extra) THEN ru.extra ELSE '{}' END,'$.horse_identity.age_sex') LIKE ?"); args.push("%/"+sex); }
+    const performance=url.searchParams.get("performance");
+    if(performance==="winner") filters.push("EXISTS(SELECT 1 FROM runners sr JOIN result_finishers sf ON sf.race_id=sr.race_id AND sf.program_number=sr.program_number WHERE sr.horse_id=ru.horse_id AND sf.finish_position=1)");
+    if(performance==="recent-itm") filters.push("EXISTS(SELECT 1 FROM runners sr JOIN races rr USING(race_id) JOIN result_finishers sf ON sf.race_id=sr.race_id AND sf.program_number=sr.program_number WHERE sr.horse_id=ru.horse_id AND sf.finish_position BETWEEN 1 AND 3 AND rr.race_date>=date('now','-30 days'))");
     if (url.searchParams.get("favorites")==="1") filters.push("EXISTS(SELECT 1 FROM stable_favorites f WHERE f.horse_id=ru.horse_id)");
     if (url.searchParams.get("upcoming")==="1") filters.push(upcoming);
     const horses = await rows(db, summary + " WHERE " + filters.join(" AND ") + " GROUP BY ru.horse_id HAVING MAX(r.race_date) IS NOT NULL ORDER BY ru.horse_id LIMIT 25", args);
-    return json({ horses: horses.slice(0,24).map(h => ({...h, image: parse(h.image), biography: parse(h.biography), form: parse(h.extra).formfav ?? {}, identity: parse(h.extra).horse_identity ?? {}, extra: undefined })), after: horses.length===25 ? horses[23].horse_id : null });
+    return json({ horses: horses.slice(0,24).map(h => ({...h, image: parse(h.image), biography: parse(h.biography), form: parse(h.extra).formfav ?? {}, recent_form: JSON.parse(String(h.recent_form||"[]")), identity: parse(h.extra).horse_identity ?? {}, extra: undefined })), after: horses.length===25 ? horses[23].horse_id : null });
+  }
+  if(path==="/api/stables/compare" && req.method==="GET"){
+    const ids=[...new Set(url.searchParams.getAll("id"))].slice(0,4);
+    if(!ids.length) return json({horses:[],headToHead:[]});
+    const horses=await Promise.all(ids.map(id=>id.startsWith("archive:")?archiveProfile(db,id.slice(8)):profile(db,id)));
+    const common=new Map<string,Row[]>();
+    for(const horse of horses){
+      if(!horse||"archive" in horse)continue;
+      for(const h of horse.history){
+        if(!Number(h.finish_position)||h.scratched)continue;
+        const key=String(h.race_id), entrants=common.get(key)??[];
+        entrants.push({horse_name:horse.horse_name,finish:h.finish_position,date:h.race_date,track:h.track_id,race_id:key});
+        common.set(key,entrants);
+      }
+    }
+    return json({horses:horses.filter(Boolean),headToHead:[...common.values()].filter(group=>group.length>1)});
   }
   const match = path.match(/^\/api\/stables\/horse\/([^/]+)(\/favorite)?$/);
   if (match) {

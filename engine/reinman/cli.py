@@ -397,7 +397,7 @@ def main(argv=None) -> int:
     ap.add_argument("--db", help="sqlite:///path.db or d1 (default: $REINMAN_DB)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     for c in ("init", "monitor", "lock", "grade", "stats", "backtest", "documents-ready", "news",
-              "canonicalize-people", "d1-usage"):
+              "canonicalize-people", "d1-usage", "stables-refresh"):
         sub.add_parser(c)
     for c in ("daily", "train"):
         sub.add_parser(c).add_argument("--force", action="store_true", help="run even if it ran recently")
@@ -443,6 +443,7 @@ def main(argv=None) -> int:
     d = getattr(a, "date", None) or today()
     fn = {
         "monitor": lambda: monitor(db),
+        "stables-refresh": lambda: guarded(db, "stables", 20, False, lambda: stables.refresh(db)),
         "news": lambda: job(db, "news", news.refresh, db),
         "canonicalize-people": lambda: bulk(db, "canonicalize-people",
                                             lambda: job(db, "canonicalize_people", canonicalize_people, db)),

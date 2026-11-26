@@ -589,3 +589,13 @@ a, button, select, input, label, summary { touch-action: manipulation; }
 .stable-photo figcaption {font-size:.7rem;padding:.35rem;overflow-wrap:anywhere}
 .stable-photo a {color:var(--gold)}
 .stable-profile .stable-photo {max-width:240px}
+.stable-pedigree small {display:block;margin-top:.35rem;font-size:.76rem;color:var(--ink-3)}
+.stable-search select {max-width:100%;padding:.55rem;border:1px solid var(--line);border-radius:5px;color:var(--charcoal);background:var(--paper)}
+.stable-search input[type=number] {max-width:100px;min-width:85px;flex:0 1 auto}
+@media(max-width:1040px) {
+  .topbar {flex-wrap:wrap}
+  .topbar .menu-btn {display:block}
+  .topbar nav {display:none;width:100%;flex-direction:column;align-items:stretch;margin:0}
+  .topbar nav.open {display:flex}
+  .topbar nav a,.topbar nav .logout {text-align:left}
+}

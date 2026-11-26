@@ -66,3 +66,20 @@ describe("stables database integration",()=>{
     expect(horse.winnerRecords).toHaveLength(1);
   });
 });
+
+describe("featured and comparison",()=>{
+  it("includes recent documented horses awaiting entries and reports shared race results",async()=>{
+    const {sqlite,call}=database();
+    sqlite.exec("INSERT INTO races(race_id,track_id,race_date,race_number,source,status) VALUES ('past','TEST',date('now','-1 day'),1,'test','official')");
+    sqlite.exec("INSERT INTO runners(race_id,program_number,horse_id,horse_name) VALUES ('past','1','alpha','Alpha'),('past','2','beta','Beta')");
+    sqlite.exec("INSERT INTO result_finishers(race_id,program_number,horse_name,finish_position) VALUES ('past','1','Alpha',1),('past','2','Beta',2)");
+    const featured=await call("/api/stables/featured");
+    expect(featured).toHaveLength(2);
+    expect(featured.every((horse:{next:unknown})=>horse.next===null)).toBe(true);
+    const comparison=await call("/api/stables/compare?id=alpha&id=beta");
+    expect(comparison.headToHead[0].map((h:{finish:number})=>h.finish)).toEqual([1,2]);
+    const winners=await call("/api/stables?performance=winner");
+    expect(winners.horses.map((h:{horse_id:string})=>h.horse_id)).toEqual(["alpha"]);
+    expect(winners.horses[0].recent_form).toEqual([1]);
+  });
+});
