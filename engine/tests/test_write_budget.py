@@ -197,3 +197,21 @@ def test_stables_enrichment_cooldown_is_idempotent(db, monkeypatch):
     monkeypatch.setattr(stables, "enrich", lambda *args: (None, None, None))
     assert _writes(db, lambda: stables.refresh(db)) > 0
     assert _writes(db, lambda: stables.refresh(db)) == 0
+
+
+
+def test_free_pp_blocked_seeds_are_idempotent(db, monkeypatch):
+    from reinman import free_pp
+    monkeypatch.setenv("REINMAN_QUOTA_USED", "0")
+    assert _writes(db, lambda: free_pp.collect(db, {})) == len(free_pp.SEEDS)
+    assert _writes(db, lambda: free_pp.collect(db, {})) == 0
+    assert db.scalar("SELECT COUNT(*) FROM free_pp_urls WHERE status='blocked'") == len(free_pp.SEEDS)
+
+
+def test_free_pp_duplicate_original_is_idempotent(db):
+    from reinman import free_pp
+    data = b"%PDF-example"
+    first = free_pp.save_document(db, "https://example.com/one.pdf", data, "application/pdf")
+    assert _writes(db, lambda: free_pp.save_document(db, "https://example.com/two.pdf", data, "application/pdf")) == 0
+    assert db.scalar("SELECT COUNT(*) FROM documents") == 1
+    assert db.scalar("SELECT COUNT(*) FROM document_file_chunks WHERE document_id=?", [first]) == 1
