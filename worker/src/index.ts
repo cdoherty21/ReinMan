@@ -1,4 +1,5 @@
 // Rein Man Worker: private API + static app + scheduled locking.
+import { stables } from "./stables";
 import { etHour, monitorPlan } from "./schedule";
 import { COOKIE, checkPassword, hashPassword, makeSession, randomToken, readCookie, sameEmail, sessionCookie, sha256, verifySession } from "./auth";
 
@@ -41,7 +42,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
   "Content-Security-Policy":
-    "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'",
+    "default-src 'self'; img-src 'self' data: https://upload.wikimedia.org; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'",
   "X-Robots-Tag": "noindex, nofollow",
 };
 
@@ -786,6 +787,10 @@ export default {
         if (!authed) return withSecurity(json({ error: "unauthorized" }, 401));
         if (req.method === "POST" && req.headers.get("Content-Type")?.includes("application/json") !== true)
           return withSecurity(json({ error: "expected JSON" }, 415));
+        if (url.pathname === "/api/stables" || url.pathname.startsWith("/api/stables/")) {
+          if (env.AUTH_DISABLED === "true" && (req.method !== "GET" || url.pathname.includes("/notifications") || url.searchParams.get("favorites") === "1")) return withSecurity(json({error:"Private sign-in required"},403));
+          return withSecurity(await stables(req, env.DB, url));
+        }
         for (const [method, re, h] of routes) {
           const m = url.pathname.match(re);
           if (m && method === req.method) return withSecurity(await h(req, env, url, m));

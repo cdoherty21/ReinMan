@@ -28,7 +28,7 @@ import traceback
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from . import backtest, documents, grading, ingest, news, news_events, performance, predict, quota, schedule, train
+from . import backtest, documents, grading, ingest, news, news_events, performance, predict, quota, schedule, stables, train
 from .db import Database, SQLiteDatabase, connect
 from .registry import ensure_baseline
 from .sources import configured_sources, get_source
@@ -293,6 +293,7 @@ def daily(db: Database) -> dict:
     out["grade"] = job(db, "grade", grading.grade_all, db)
     out["stats"] = (job(db, "stats", performance.refresh_stats, db)
                     if quota.may(db, "standard") else deferred("stats refresh", quota.status(db)))
+    out["stables"] = job(db, "stables", stables.refresh, db) if quota.may(db, "background") else deferred("horse enrichment", quota.status(db))
     out["quota"] = quota.status(db)
     return out
 

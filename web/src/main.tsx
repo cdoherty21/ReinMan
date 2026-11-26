@@ -14,6 +14,8 @@ const Performance = lazy(() => import("./pages/Performance").then((m) => ({ defa
 const History = lazy(() => import("./pages/History").then((m) => ({ default: m.History })));
 const Documents = lazy(() => import("./pages/Documents").then((m) => ({ default: m.Documents })));
 
+const Stables = lazy(() => import("./pages/Stables").then(m => ({ default: m.Stables })));
+
 const NAV = [
   ["/", "Today"],
   ["/cards", "Race Cards"],
@@ -21,6 +23,7 @@ const NAV = [
   ["/performance", "Performance"],
   ["/history", "History"],
   ["/documents", "Documents"],
+  ["/stables", "The Stables"],
 ] as const;
 
 export function Link({ to, children, className }: { to: string; children: React.ReactNode; className?: string }) {
@@ -146,6 +149,7 @@ function Shell({ authRequired }: { authRequired: boolean }) {
   let page: React.ReactNode;
   const raceMatch = path.match(/^\/race\/(.+)$/);
   if (raceMatch) page = <Race id={decodeURIComponent(raceMatch[1])} />;
+  else if (path === "/stables" || path.startsWith("/stables/")) page = <Stables id={path.startsWith("/stables/") ? decodeURIComponent(path.slice(9)) : undefined} />;
   else if (path.startsWith("/cards")) page = <RaceCards />;
   else if (path.startsWith("/opportunities")) page = <Opportunities />;
   else if (path.startsWith("/performance")) page = <Performance />;
