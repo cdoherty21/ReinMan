@@ -36,7 +36,7 @@ jobs:
       - name: Check whether initial horse enrichment is due
         id: stables-bootstrap
         run: |
-          count=$(npx wrangler d1 execute rein-man --remote -c worker/wrangler.jsonc --json --command 'SELECT COUNT(*) AS total FROM stable_enrichment' | jq -r '.[0].results[0].total')
+          count=$(npx wrangler d1 execute rein-man --remote -c worker/wrangler.jsonc --json --command 'SELECT COUNT(*) AS total FROM stable_enrichment WHERE image IS NOT NULL' | jq -r '.[0].results[0].total')
           test "$count" -ge 0
           echo "due=$([ "$count" = 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v6
@@ -51,7 +51,7 @@ jobs:
           D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
         run: |
           pip install -e engine
-          reinman stables-refresh
+          reinman stables-photos
       - name: Verify Stables production route and report coverage
         run: |
           curl --fail --silent --show-error --retry 3 https://rein-man.doherty-connor30.workers.dev/stables | grep -q 'Rein Man'

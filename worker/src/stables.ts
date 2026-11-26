@@ -146,7 +146,8 @@ async function archiveProfile(db: D1Database, key: string) {
   const winnerRecords = winners.map(w=>({date:w.race_date,track:w.track_id,race_number:w.race_number,source:"Winner archive",...parse(w.data)}));
   const record = assessment(history.filter(h=>Number(h.finish_position)>0).map(h=>Number(h.finish_position)));
   const favorite = await one(db,"SELECT 1 AS favorite FROM stable_favorites WHERE horse_id=?",["archive:"+key]);
-  return {horse_id:"archive:"+key,horse_name:(chart[0]??winners[0]).horse_name, archive:true, identity:{},
+  const enrichment = await one(db,"SELECT image,biography,retrieved_at FROM stable_enrichment WHERE horse_id=?",["archive:"+key]);
+  return {image:parse(enrichment?.image),biography:parse(enrichment?.biography),retrieved_at:enrichment?.retrieved_at,horse_id:"archive:"+key,horse_name:(chart[0]??winners[0]).horse_name, archive:true, identity:{},
     favorite:favorite?.favorite??0,record,history,winnerRecords,news:[],next:null,opponents:[],preferences:{},
     evidence:["Historical name key requires corroborating identity before linking to an active horse.", "Winner-only observations are excluded from career rates."]};
 }
@@ -158,12 +159,13 @@ async function archiveDirectory(db: D1Database, url: URL) {
     SELECT horse_key, horse_name, race_date, track_id, data FROM chart_lines WHERE horse_key>?
     UNION ALL SELECT horse_key, horse_name, race_date, track_id, data FROM historical_winners WHERE horse_key>?
   ) SELECT 'archive:'||horse_key AS horse_id,horse_name, MAX(race_date) AS race_date, track_id,
+    (SELECT image FROM stable_enrichment WHERE horse_id='archive:'||horse_key) AS image,
     EXISTS(SELECT 1 FROM stable_favorites f WHERE f.horse_id='archive:'||horse_key) AS favorite
     FROM archived WHERE (horse_name LIKE ? ESCAPE '\\' OR data LIKE ? ESCAPE '\\' OR track_id LIKE ? ESCAPE '\\')
     AND (?=0 OR EXISTS(SELECT 1 FROM stable_favorites f WHERE f.horse_id='archive:'||horse_key))
     GROUP BY horse_key ORDER BY horse_key LIMIT 25`,
     [cursor.replace(/^archive:/,""),cursor.replace(/^archive:/,""),term,term,term,url.searchParams.get("favorites")==="1"?1:0]);
-  return {horses:records.slice(0,24).map(h=>({...h,archive:true,identity:{}})),after:records.length===25?records[23].horse_id:null};
+  return {horses:records.slice(0,24).map(h=>({...h,image:parse(h.image),archive:true,identity:{}})),after:records.length===25?records[23].horse_id:null};
 }
 
 export async function stables(req: Request, db: D1Database, url: URL): Promise<Response> {
