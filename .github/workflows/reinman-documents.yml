@@ -6,9 +6,10 @@ on:
         description: Scan existing uploads again
         type: boolean
         default: false
-  # The Worker starts a scan within 5 minutes of an upload; this is a backup.
+  # The Worker starts a scan within 5 minutes of an upload; this daily run is only a
+  # backup (it was every 3 hours: about 60 Actions minutes a week for nothing to scan).
   schedule:
-    - cron: "17 */3 * * *"
+    - cron: "17 9 * * *"
 concurrency:
   group: reinman-db-writer
   cancel-in-progress: false

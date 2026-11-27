@@ -13,39 +13,54 @@ concurrency:
   cancel-in-progress: true
 permissions:
   contents: read
+  pull-requests: read
 jobs:
-  engine:
+  # One job, not two: GitHub bills each job rounded up to a whole minute and each job pays
+  # its own setup. Only the suites whose code changed run (GitHub Actions minutes budget,
+  # see docs/ACTIONS_BUDGET.md); a change to this file or package files runs everything.
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults: { run: { working-directory: engine } }
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: dorny/paths-filter@v3
+        id: changed
+        with:
+          filters: |
+            engine:
+              - 'engine/**'
+              - '.github/workflows/reinman-ci.yml'
+            web:
+              - 'web/**'
+              - 'worker/**'
+              - 'package*.json'
+              - '.github/workflows/reinman-ci.yml'
+      # ---- engine (Python) ----
+      - if: steps.changed.outputs.engine == 'true'
+        uses: actions/setup-python@v6
         with: { python-version: "3.12", cache: pip, cache-dependency-path: engine/pyproject.toml }
-      - run: pip install -e ".[dev]"
-      - run: pytest -q
-  web-worker:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults: { run: { working-directory: . } }
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - if: steps.changed.outputs.engine == 'true'
+        working-directory: engine
+        run: pip install -e ".[dev]" && pytest -q
+      # ---- web + Worker (TypeScript) ----
+      - if: steps.changed.outputs.web == 'true'
+        uses: actions/setup-node@v5
         with: { node-version: 22, cache: npm, cache-dependency-path: package-lock.json }
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
+      - if: steps.changed.outputs.web == 'true'
+        run: npm ci && npm run typecheck && npm test && npm run build
       # The browser download is cached by Playwright version; only its system libraries install each run.
-      - id: pw
+      - if: steps.changed.outputs.web == 'true'
+        id: pw
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - if: steps.changed.outputs.web == 'true'
+        uses: actions/cache@v4
         id: pw-cache
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium
-      - if: steps.pw-cache.outputs.cache-hit != 'true'
+      - if: steps.changed.outputs.web == 'true' && steps.pw-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
-      - if: steps.pw-cache.outputs.cache-hit == 'true'
+      - if: steps.changed.outputs.web == 'true' && steps.pw-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
-      - run: npx playwright test --config web/playwright.config.ts
+      - if: steps.changed.outputs.web == 'true'
+        run: npx playwright test --config web/playwright.config.ts --trace off

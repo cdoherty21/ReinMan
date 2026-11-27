@@ -35,6 +35,13 @@ In short:
 * **Check real usage with the read-only `reinman-usage` workflow** (`reinman d1-usage`).
   It reports Cloudflare's measured numbers and per-job counts, clearly labelled.
 
+## GitHub Actions minutes are a hard budget too
+
+The repository is private on GitHub Free: 2,000 Actions minutes a month, each job rounded
+up to a whole minute. Read `docs/ACTIONS_BUDGET.md` before adding or changing a workflow.
+Use one job instead of several, gate on changed paths, schedule backups no more than daily,
+and do in the Worker whatever can be done there.
+
 ## Other standing rules
 
 * **Data fixes** are merged to `main` before they run and are recorded in
