@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Link } from "../main";
-import { dayName, fmtDate, postTime, shiftDate, surfaceName, useApi } from "../lib";
+import { dayName, fmtDate, money, postTime, shiftDate, surfaceName, useApi, wagerLabel } from "../lib";
+import { isUpcoming, playsOf } from "../plays";
 import { HorseNumber, Confidence, DatePicker, Decision, Empty, ErrorBox, Loading, useDateParam } from "./common";
 
 export type RaceRow = {
@@ -10,8 +12,45 @@ export type RaceRow = {
   dark_horse: string | null; confidence: string | null; decision: string | null; model_version: string | null;
   predicted_at: string | null; field_size: number; locked: number | null; winner: string | null;
   top1_finish: number | null; grade_status: string | null;
+  wagers?: Bet[];
   top1_name?: string; top2_name?: string; top3_name?: string; value_pick_name?: string; dark_horse_name?: string;
 };
+
+type Bet = { wager_type: string; selection: string; cost: number; status: string | null; payout: number | null };
+
+function PlayOutcome({ r, now }: { r: RaceRow; now: number }) {
+  if (isUpcoming(r, now)) return <span className="tag">Upcoming</span>;
+  const bets = r.wagers ?? [];
+  if (!bets.length || bets.some((b) => b.status == null)) return <span className="muted small">Result pending</span>;
+  const cost = bets.reduce((t, b) => t + b.cost, 0);
+  const back = bets.reduce((t, b) => t + (b.payout ?? 0), 0);
+  const net = back - cost;
+  if (bets.every((b) => b.status === "refunded")) return <span className="muted small">Refunded</span>;
+  return <span className={net >= 0 ? "pos" : "neg"}><b>{net >= 0 ? "Won" : "Lost"}</b> {money(Math.abs(net))}</span>;
+}
+
+function PlaysList({ rows, now }: { rows: RaceRow[]; now: number }) {
+  if (!rows.length) return <p className="muted">No plays recorded for this day.</p>;
+  return (
+    <ul className="bets plays-list">
+      {rows.map((r) => (
+        <li key={r.race_id}>
+          <Link to={`/race/${r.race_id}`}>
+            <span className="when">{postTime(r.post_time)}</span>
+            <span className="where">{r.track_name || r.track_id} R{r.race_number}</span>
+            <PickCell r={r} />
+            <span className="play-bets small">
+              {(r.wagers ?? []).map((b, i) => (
+                <span key={i}>{wagerLabel(b.wager_type)} {b.selection} · {money(b.cost)}</span>
+              ))}
+            </span>
+            <PlayOutcome r={r} now={now} />
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export function distance(r: { distance_desc: string | null; distance_yards: number | null }) {
   if (r.distance_desc) return r.distance_desc;
@@ -35,10 +74,22 @@ export function Today() {
   const { data, error } = useApi<{ date: string; races: RaceRow[] }>(`/api/today?date=${date}`);
   const races = data?.races ?? [];
   const now = Date.now();
-  const upcoming = races.filter((r) => r.status === "scheduled" && !r.is_cancelled && r.post_time && Date.parse(r.post_time) > now);
+  const upcoming = races.filter((r) => isUpcoming(r, now));
   const done = races.filter((r) => !upcoming.includes(r));
   const tracks = [...new Map(races.map((r) => [r.track_id, r.track_name || r.track_id])).entries()];
-  const plays = upcoming.filter((r) => r.decision === "play").sort((a, b) => (a.post_time! < b.post_time! ? -1 : 1));
+  // Every play Rein Man made today: locked plays for races already run, plus plays still to come.
+  const playSets = playsOf(races, now);
+  const plays = playSets.upcoming;
+  const allPlays = playSets.all;
+  const [showPlays, setShowPlays] = useState(() => new URLSearchParams(location.search).get("plays") === "1");
+  const togglePlays = () => {
+    const next = !showPlays;
+    setShowPlays(next);
+    const u = new URL(location.href);
+    if (next) u.searchParams.set("plays", "1"); else u.searchParams.delete("plays");
+    history.replaceState(null, "", u.pathname + u.search);
+    if (next) requestAnimationFrame(() => document.getElementById("plays-list")?.scrollIntoView({ block: "nearest" }));
+  };
   const values = upcoming.filter((r) => r.value_pick && r.value_pick !== r.top1);
   return (
     <>
@@ -62,8 +113,19 @@ export function Today() {
             <div><b>{tracks.length}</b><span>{tracks.length === 1 ? "Track" : "Tracks"}</span></div>
             <div><b>{races.length}</b><span>{races.length === 1 ? "Race" : "Races"}</span></div>
             <div><b>{upcoming.length}</b><span>To run</span></div>
-            <div className={plays.length > 0 ? "gold" : ""}><b>{plays.length}</b><span>{plays.length === 1 ? "Play" : "Plays"}</span></div>
+            <div className={allPlays.length > 0 ? "gold" : ""}>
+              <button className="strip-btn" onClick={togglePlays} aria-expanded={showPlays} aria-controls="plays-list">
+                <b>{allPlays.length}</b><span>{allPlays.length === 1 ? "Play" : "Plays"}</span>
+                <span className="strip-caret" aria-hidden="true">{showPlays ? "▴" : "▾"}</span>
+              </button>
+            </div>
           </section>
+          {showPlays && (
+            <section className="card" id="plays-list">
+              <h2>Rein Man's Plays · {fmtDate(date)}</h2>
+              <PlaysList rows={allPlays} now={now} />
+            </section>
+          )}
           <section className="chips" aria-label="Racetracks">
             <span className="chips-label">{tracks.length === 1 ? "Track" : "Tracks"}</span>
             {tracks.map(([id, name]) => (
@@ -77,7 +139,7 @@ export function Today() {
               <div className="rest-text">
                 <h2>The day's racing is complete</h2>
                 <p className="muted">
-                  Every race has been run.{plays.length === 0 && " Nothing cleared Rein Man's value threshold, and he's happy to wait."}
+                  Every race has been run.{allPlays.length === 0 && " Nothing cleared Rein Man's value threshold, and he's happy to wait."}
                 </p>
               </div>
               <button className="btn ghost" onClick={() => setDate(shiftDate(date, 1))}>

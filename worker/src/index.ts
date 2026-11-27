@@ -234,10 +234,23 @@ const routes: [string, RegExp, Handler][] = [
         date,
       );
       const nm = new Map(names.map((n) => [`${n.race_id}|${n.program_number}`, n.horse_name]));
+      // The bets behind each race's shown (locked, else latest) prediction, with results.
+      const bets = await all<{ prediction_id: number; wager_type: string; selection: string; cost: number;
+                              status: string | null; payout: number | null }>(
+        env.DB,
+        `SELECT w.prediction_id, w.wager_type, w.selection, w.cost, g.status, g.payout
+         FROM races r JOIN wagers w ON w.prediction_id = ${LATEST_PRED}
+         LEFT JOIN wager_grades g ON g.wager_id = w.wager_id
+         WHERE r.race_date = ? ORDER BY w.wager_id`,
+        date,
+      );
+      const byPred = new Map<number, unknown[]>();
+      for (const b of bets) byPred.set(b.prediction_id, [...(byPred.get(b.prediction_id) ?? []), b]);
       for (const r of races as Record<string, unknown>[]) {
         for (const k of ["top1", "top2", "top3", "value_pick", "dark_horse"]) {
           if (r[k]) r[`${k}_name`] = nm.get(`${r.race_id}|${r[k]}`) ?? null;
         }
+        r.wagers = byPred.get(r.prediction_id as number) ?? [];
       }
       return json({ date, races });
     },

@@ -608,3 +608,11 @@ a, button, select, input, label, summary { touch-action: manipulation; }
 .stable-summary-entry a {color:var(--gold)}
 .stable-profile .stable-summary {flex:0 1 260px;border-radius:7px}
 @media(max-width:650px){.stable-profile .stable-summary{flex:1 1 100%}}
+
+/* Plays tile: a button that opens the day's list of plays */
+.strip-btn { all: unset; box-sizing: border-box; display: flex; align-items: baseline; gap: 0.5rem; width: 100%; cursor: pointer;
+  border-radius: 6px; }
+.strip-btn:hover b { text-decoration: underline; text-underline-offset: 3px; }
+.strip-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.strip-caret { margin-left: auto; color: var(--ink-3); font-size: 0.8rem; }
+.play-bets { display: flex; flex-direction: column; color: var(--ink-2); }
