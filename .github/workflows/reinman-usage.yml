@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   usage:
     runs-on: ubuntu-latest
@@ -22,3 +23,36 @@ jobs:
         with: { python-version: "3.12", cache: pip, cache-dependency-path: engine/pyproject.toml }
       - run: pip install -e .
       - run: reinman d1-usage
+      # READ-ONLY: GitHub Actions minutes over the last 7 days, per workflow. Linux jobs are
+      # billed per job, rounded up to the whole minute (private repositories).
+      - name: Actions minutes (last 7 days)
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          since=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          gh api --paginate "repos/${{ github.repository }}/actions/runs?per_page=100&created=>=$since" \
+            --jq '.workflow_runs[] | [.id, .name] | @tsv' > runs.tsv
+          : > jobs.tsv
+          while IFS=$'\t' read -r id name; do
+            gh api "repos/${{ github.repository }}/actions/runs/$id/jobs?per_page=100" \
+              --jq ".jobs[] | select(.started_at and .completed_at) | [\"$name\", .started_at, .completed_at, (.started_at[0:10])] | @tsv" >> jobs.tsv || true
+          done < runs.tsv
+          python3 - <<'PY'
+          import csv, math
+          from collections import defaultdict
+          from datetime import datetime
+          by_wf, by_day, runs = defaultdict(int), defaultdict(int), defaultdict(int)
+          for name, start, end, day in csv.reader(open("jobs.tsv"), delimiter="\t"):
+              s = datetime.fromisoformat(start.replace("Z", "+00:00")); e = datetime.fromisoformat(end.replace("Z", "+00:00"))
+              mins = max(1, math.ceil((e - s).total_seconds() / 60)) if e > s else 0
+              by_wf[name] += mins; by_day[day] += mins; runs[name] += 1
+          print("MINUTES BY WORKFLOW (7 days, billed per job, rounded up):")
+          for k, v in sorted(by_wf.items(), key=lambda x: -x[1]):
+              print(f"  {k:28s} {v:5d} min  {runs[k]:4d} jobs")
+          print("MINUTES BY DAY:")
+          for k in sorted(by_day):
+              print(f"  {k} {by_day[k]:5d}")
+          print("TOTAL 7 days:", sum(by_wf.values()), "min; 30-day pace:", round(sum(by_wf.values()) / 7 * 30))
+          PY
+
