@@ -84,7 +84,7 @@ the live database, holding the same lock as the other data jobs. Record each run
 
 ## 4. The clock (Worker → GitHub) — required
 GitHub's own schedules are unreliable (often hours late or skipped), so the Worker's
-5-minute cron starts the jobs: the race-day monitor when the card calls for it (`worker/src/schedule.ts`, re-read from the post times in the database on every tick, so moved posts, delays and dark days are followed): 4–14 minutes before a post, at least `MONITOR_MIN_GAP_MIN` (default 20) minutes apart to fit a private repo's 2,000 free Actions minutes; a warm-up up to 90 minutes before a session's first race; results sweeps every 30 minutes while run races lack a result; and every 3 hours (8am–10pm ET) when no races are on file. Then a document scan within 5 minutes of an upload, the daily cycle at ~6:40am ET, and weekly
+5-minute cron starts the jobs: the race-day monitor when the card calls for it (`worker/src/schedule.ts`, re-read from the post times in the database on every tick, so moved posts, delays and dark days are followed): 4–14 minutes before a post, at least `MONITOR_MIN_GAP_MIN` (45 in `worker/wrangler.jsonc`; 20 if unset) minutes apart to fit a private repo's 2,000 free Actions minutes; a warm-up up to 90 minutes before a session's first race; results sweeps every 30 minutes while run races lack a result; and every 3 hours (8am–10pm ET) when no races are on file. Then a document scan within 5 minutes of an upload, the daily cycle at ~6:40am ET, and weekly
 learning on Monday mornings. Each start is claimed in `job_runs`, so it happens once.
 GitHub's schedules remain as backups, and the daily/learning jobs skip themselves if they
 already ran.
@@ -117,7 +117,7 @@ The engine can point at the local D1 file with
 | Item | Cost |
 |---|---|
 | Cloudflare Workers, D1, Cron, Access | $0 (free tier: 100k requests/day, 5 GB D1) |
-| GitHub Actions | $0 for public repos; private repos get 2,000 free minutes/month. A monitor run takes ~1–2 min; following the card it runs roughly 25–35 times on a full racing day. If minutes run short, raise the Worker variable `MONITOR_MIN_GAP_MIN` (e.g. 30). |
+| GitHub Actions | $0 for public repos; private repos get 2,000 free minutes/month. A monitor run takes ~1–2 min; following the card it runs roughly 25–35 times on a full racing day. It is set to 45 to leave room for the account's other private repositories; lower it only if minutes allow. |
 | NWS weather | $0 |
 | AI API calls | $0 — all analysis text is generated deterministically |
 

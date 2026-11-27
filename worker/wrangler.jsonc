@@ -33,7 +33,8 @@
     "GITHUB_REPO": "cdoherty21/ReinMan",
     "GITHUB_WORKFLOW": "reinman-monitor.yml",
     "GITHUB_REF": "main",
-    "MONITOR_MIN_GAP_MIN": "20"
+    // 45 (was 20): about half the monitor runs, to fit the account's free Actions minutes.
+    "MONITOR_MIN_GAP_MIN": "45"
   },
   "keep_vars": true,
   "observability": { "enabled": true }

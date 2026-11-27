@@ -36,7 +36,7 @@ See [free-feed and OTB setup](docs/SETUP.md#free-us-racing-data) for credentials
 | When | What | Where |
 |---|---|---|
 | Every 5 min | Lock final pre-post selection for races at post | Worker cron |
-| Follows the card: 4–14 min before posts (≥20 min apart), a warm-up before the first race, results sweeps | `reinman monitor`: cards, scratches, changes, odds, results → re-predict changed races → grade → stats | GitHub Actions (dispatched by Worker from today's post times) |
+| Follows the card: 4–14 min before posts (≥45 min apart), a warm-up before the first race, results sweeps | `reinman monitor`: cards, scratches, changes, odds, results → re-predict changed races → grade → stats | GitHub Actions (dispatched by Worker from today's post times) |
 | 6:41am ET daily | `reinman daily`: yesterday's/today's results, today's + tomorrow's cards & predictions, grading, stats | GitHub Actions |
 | Mondays | `reinman train` (gate) + `reinman backtest` | GitHub Actions |
 
