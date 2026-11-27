@@ -37,3 +37,9 @@ These branches are kept (not deleted) because they are the only record of what r
 | When (UTC) | Commit | Workflow | What it did |
 |---|---|---|---|
 | ~18:15 | `claude/d1-efficiency` merge | reinman-deploy (migration `0101_write_budget`) | Added `job_runs.rows_written`. Dropped the unused indexes `idx_runners_horse`, `idx_runners_jockey`, `idx_runners_trainer`. No rows were changed or removed, and the indexes can be recreated at any time. Cloudflare reported 76,648 rows written by 17:56 UTC that day (49,000 the day before); see docs/D1_BUDGET.md. |
+
+## 2026-11-27 — futures pools are not races (from `main`)
+
+| When (UTC) | Commit | Workflow run | What it did |
+|---|---|---|---|
+| 22:48 | `0d98f86` | reinman-maintenance #3 (`exclude-non-races`) | Marked 4 Kentucky Derby futures pools that the PuntersEdge board had been stored as races (`KY_DERBY_FUTURES-20261126-2`, `KY_DERBY_SIRE_FUTURES-20261126-1`, `KY_DERBY_SIRE_FUTURES-20261127-1`, `KY_DERBY_FUTURES-20261127-2`; post time 2027-05-02) as `status='not_a_race'`, cancelled. Nothing deleted. They made the Today tab show races "to run" on finished days. The reader now skips such entries. (Run #2 failed before touching data: the command was not registered.) |
