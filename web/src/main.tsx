@@ -22,8 +22,8 @@ const NAV = [
   ["/opportunities", "Value"],
   ["/performance", "Performance"],
   ["/history", "History"],
-  ["/documents", "Documents"],
   ["/stables", "The Stables"],
+  ["/documents", "Documents"],
 ] as const;
 
 export function Link({ to, children, className }: { to: string; children: React.ReactNode; className?: string }) {
