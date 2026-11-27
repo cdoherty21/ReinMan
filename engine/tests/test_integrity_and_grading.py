@@ -197,3 +197,21 @@ def test_stale_tote_odds_give_a_watch_not_a_bet(db):
     assert not db.query("SELECT * FROM wagers WHERE prediction_id=? AND wager_type='WIN'", [row["prediction_id"]])
     for w in notes["watch"]:
         assert w["min_odds"] > 0 and w["horse_name"].startswith("Horse")
+
+
+def test_grade_all_skips_races_without_results(db, monkeypatch):
+    # Unfinished races must not build a RaceResult: on D1 that is six HTTP queries per race,
+    # repeated on every monitor run until the race is official.
+    ingest.store_card(db, _card(_future(1)), "t")
+    predict.predict_date(db, "2026-11-24")
+    pid = db.scalar("SELECT prediction_id FROM predictions")
+    db.insert("wagers", {"prediction_id": pid, "race_id": "AQU-20261124-1", "legs": ["AQU-20261124-1"],
+                         "wager_type": "WIN", "structure": "straight", "selection": "1", "combos": 1,
+                         "base_amount": 2.0, "cost": 2.0, "est_prob": 0.4})
+    time.sleep(1.2)
+    assert predict.lock_due(db) == 1
+
+    def boom(*a, **k):
+        raise AssertionError("RaceResult built for a race with no result")
+    monkeypatch.setattr(grading, "RaceResult", boom)
+    assert grading.grade_all(db) == {"predictions_graded": 0, "wagers_graded": 0}

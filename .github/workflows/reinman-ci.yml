@@ -1,14 +1,22 @@
 name: reinman-ci
+# Push runs only on main (a branch's commits are tested by its pull request, not twice).
+# Docs and other workflows' files never change what these tests check.
 on:
   push:
-    paths: ["engine/**", "web/**", "worker/**", "docs/**", "package*.json", ".github/workflows/reinman-*.yml"]
+    branches: [main]
+    paths: ["engine/**", "web/**", "worker/**", "package*.json", ".github/workflows/reinman-ci.yml"]
   pull_request:
-    paths: ["engine/**", "web/**", "worker/**", "docs/**", "package*.json", ".github/workflows/reinman-*.yml"]
+    paths: ["engine/**", "web/**", "worker/**", "package*.json", ".github/workflows/reinman-ci.yml"]
+# A newer push to the same branch or PR cancels the run still in progress.
+concurrency:
+  group: reinman-ci-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   engine:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults: { run: { working-directory: engine } }
     steps:
       - uses: actions/checkout@v5
@@ -18,6 +26,7 @@ jobs:
       - run: pytest -q
   web-worker:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults: { run: { working-directory: . } }
     steps:
       - uses: actions/checkout@v5
@@ -27,5 +36,16 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: npx playwright install --with-deps chromium
+      # The browser download is cached by Playwright version; only its system libraries install each run.
+      - id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
       - run: npx playwright test --config web/playwright.config.ts

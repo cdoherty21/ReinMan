@@ -171,6 +171,25 @@ def _expand(w: dict) -> list[list[str]]:
     return [c.split("-") for c in sel.split()]
 
 
+def _settled(db: Database, race_ids) -> tuple[set[str], set[str]]:
+    """(official, cancelled) race ids among race_ids, in a few batched queries.
+
+    Lets grade_all skip races that have no result yet without building a RaceResult
+    (six queries each, which on D1 is six HTTP round trips per unfinished race)."""
+    ids = sorted({r for r in race_ids if r})
+    official: set[str] = set()
+    cancelled: set[str] = set()
+    for i in range(0, len(ids), 90):  # D1 allows at most 100 bound parameters
+        chunk = ids[i:i + 90]
+        marks = ",".join("?" * len(chunk))
+        official |= {r["race_id"] for r in db.query(
+            f"SELECT DISTINCT race_id FROM results WHERE race_id IN ({marks})", chunk)}
+        cancelled |= {r["race_id"] for r in db.query(
+            f"SELECT race_id FROM races WHERE race_id IN ({marks}) "
+            "AND (is_cancelled OR status='cancelled')", chunk)}
+    return official, cancelled
+
+
 def grade_all(db: Database) -> dict:
     now = datetime.now(timezone.utc)
     pending = db.query("SELECT l.race_id, l.prediction_id FROM locks l LEFT JOIN grades g ON g.race_id=l.race_id "
@@ -182,8 +201,18 @@ def grade_all(db: Database) -> dict:
             cache[rid] = RaceResult(db, rid)
         return cache[rid]
 
+    wq = db.query("SELECT w.* FROM wagers w JOIN locks l ON l.prediction_id=w.prediction_id "
+                  "LEFT JOIN wager_grades g ON g.wager_id=w.wager_id WHERE g.wager_id IS NULL")
+    for w in wq:
+        if isinstance(w["legs"], str):
+            w["legs"] = json.loads(w["legs"])
+    official, cancelled = _settled(db, [lk["race_id"] for lk in pending] +
+                                   [x for w in wq for x in w["legs"]])
+
     graded = 0
     for lk in pending:
+        if lk["race_id"] not in official and lk["race_id"] not in cancelled:
+            continue  # no result yet: RaceResult would find the same, at six queries per race
         r = res(lk["race_id"])
         if not (r.official or r.cancelled):
             continue
@@ -214,11 +243,12 @@ def grade_all(db: Database) -> dict:
         db.insert("grades", row)
         graded += 1
     # wagers from locked predictions
-    wq = db.query("SELECT w.* FROM wagers w JOIN locks l ON l.prediction_id=w.prediction_id "
-                  "LEFT JOIN wager_grades g ON g.wager_id=w.wager_id WHERE g.wager_id IS NULL")
     wg = 0
     for w in wq:
-        legs = json.loads(w["legs"])
+        legs = w["legs"]
+        # grade_wager returns None unless a leg is cancelled or every leg is official
+        if not any(x in cancelled for x in legs) and not all(x in official for x in legs):
+            continue
         results = {x: res(x) for x in legs}
         g = grade_wager(w, results, now)
         if g:
