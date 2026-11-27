@@ -154,5 +154,13 @@ def performance_check(db: Database, days: int = 7) -> dict:
     jobs = db.query("SELECT job, started_at, status, substr(details,1,300) AS details FROM job_runs "
                     "WHERE job IN ('results','grade','stats','daily_cycle','monitor','puntersedge_results_request',"
                     "'otb_page_request') ORDER BY id DESC LIMIT 30")
-    return {"per_day": per_day, "result_sources": sources, "grades": grades, "stats_cache": cache,
+    # Races from earlier days that still look upcoming (post time ahead of now, or never settled).
+    stale = db.query(
+        "SELECT r.race_id, r.race_date, r.post_time, r.status, r.is_cancelled, r.source, r.updated_at, "
+        "t.timezone, (SELECT COUNT(*) FROM results s WHERE s.race_id=r.race_id) AS has_result "
+        "FROM races r LEFT JOIN tracks t ON t.track_id=r.track_id "
+        "WHERE r.race_date>=? AND r.race_date<? AND r.is_cancelled=0 AND r.status='scheduled' "
+        "AND (r.post_time IS NULL OR r.post_time>?) ORDER BY r.race_date, r.post_time",
+        [since, now[:10], now])
+    return {"stale_upcoming": stale, "per_day": per_day, "result_sources": sources, "grades": grades, "stats_cache": cache,
             "locked_wagers": wagers, "recent_jobs": jobs}
