@@ -35,3 +35,11 @@ describe("dates", () => {
     expect(usDates("read at 2026-11-23T10:00:00Z")).toBe("read at 2026-11-23T10:00:00Z");
   });
 });
+
+describe("long dates", () => {
+  it("spells the month with the year last", async () => {
+    const { longDate } = await import("./lib");
+    expect(longDate("2026-12-01")).toBe("December 1, 2026");
+    expect(longDate("2027-05-02")).toBe("May 2, 2027");
+  });
+});

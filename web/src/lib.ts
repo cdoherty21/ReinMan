@@ -122,6 +122,10 @@ export function fmtDate(d: string | null | undefined, short = false): string {
 // Dates written inside stored analysis text ("2026-11-23 · PRX") read as 11/23/2026.
 export const usDates = (text: string) =>
   text.replace(/\b(\d{4})-(\d{2})-(\d{2})(?![\dT:])/g, (_, y, m, d) => `${Number(m)}/${Number(d)}/${y}`);
+/** "2026-12-01" -> "December 1, 2026" (a calendar day, never shifted by time zone). */
+export function longDate(d: string): string {
+  return new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
 export function dayName(d: string, style: "long" | "short" = "long"): string {
   return new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { weekday: style, timeZone: "UTC" });
 }

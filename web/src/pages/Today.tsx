@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "../main";
-import { dayName, fmtDate, money, postTime, shiftDate, surfaceName, useApi, wagerLabel } from "../lib";
+import { dayName, fmtDate, longDate, money, postTime, shiftDate, surfaceName, todayET, useApi, wagerLabel } from "../lib";
 import { isUpcoming, playsOf } from "../plays";
 import { HorseNumber, Confidence, DatePicker, Decision, Empty, ErrorBox, Loading, useDateParam } from "./common";
 
@@ -95,7 +95,7 @@ export function Today() {
     <>
       <div className="page-head">
         <div>
-          <h1>Today</h1>
+          <h1>{date === todayET() ? "Today" : longDate(date)}</h1>
           <p className="muted">Race card for {dayName(date)} {fmtDate(date)}</p>
         </div>
         <DatePicker date={date} onChange={setDate} />
