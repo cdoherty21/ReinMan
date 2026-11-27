@@ -224,13 +224,13 @@ const routes: [string, RegExp, Handler][] = [
          FROM races r LEFT JOIN tracks t ON t.track_id = r.track_id
          LEFT JOIN predictions p ON p.prediction_id = ${LATEST_PRED}
          LEFT JOIN grades g ON g.race_id = r.race_id
-         WHERE r.race_date = ? ORDER BY r.post_time, r.track_id`,
+         WHERE r.race_date = ? AND r.status != 'not_a_race' ORDER BY r.post_time, r.track_id`,
         date,
       );
       const names = await all<{ race_id: string; program_number: string; horse_name: string }>(
         env.DB,
         `SELECT ru.race_id, ru.program_number, ru.horse_name FROM runners ru JOIN races r ON r.race_id = ru.race_id
-         WHERE r.race_date = ?`,
+         WHERE r.race_date = ? AND r.status != 'not_a_race'`,
         date,
       );
       const nm = new Map(names.map((n) => [`${n.race_id}|${n.program_number}`, n.horse_name]));
@@ -241,7 +241,7 @@ const routes: [string, RegExp, Handler][] = [
         `SELECT w.prediction_id, w.wager_type, w.selection, w.cost, g.status, g.payout
          FROM races r JOIN wagers w ON w.prediction_id = ${LATEST_PRED}
          LEFT JOIN wager_grades g ON g.wager_id = w.wager_id
-         WHERE r.race_date = ? ORDER BY w.wager_id`,
+         WHERE r.race_date = ? AND r.status != 'not_a_race' ORDER BY w.wager_id`,
         date,
       );
       const byPred = new Map<number, unknown[]>();
@@ -332,7 +332,7 @@ const routes: [string, RegExp, Handler][] = [
          JOIN wagers w ON w.prediction_id = p.prediction_id
          LEFT JOIN tracks t ON t.track_id = r.track_id
          LEFT JOIN wager_grades g ON g.wager_id = w.wager_id
-         WHERE r.race_date = ? ORDER BY w.ev DESC`,
+         WHERE r.race_date = ? AND r.status != 'not_a_race' ORDER BY w.ev DESC`,
         date,
       );
       const value = await all(
@@ -343,7 +343,7 @@ const routes: [string, RegExp, Handler][] = [
          FROM races r JOIN predictions p ON p.prediction_id = ${LATEST_PRED}
          JOIN prediction_runners pr ON pr.prediction_id = p.prediction_id
          LEFT JOIN tracks t ON t.track_id = r.track_id
-         WHERE r.race_date = ? AND (pr.program_number = p.value_pick OR pr.program_number = p.dark_horse)
+         WHERE r.race_date = ? AND r.status != 'not_a_race' AND (pr.program_number = p.value_pick OR pr.program_number = p.dark_horse)
          ORDER BY pr.ev_win DESC`,
         date,
       );

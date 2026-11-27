@@ -58,3 +58,20 @@ def test_free_jobs_share_provider_budget(monkeypatch):
         assert automatic_sources(db)[0].reserve("tote")
     assert not automatic_sources(db)[0].reserve("tote")
     assert automatic_sources(db)[0].reserve("results")
+
+
+def test_futures_pools_are_not_races():
+    """PuntersEdge lists Kentucky Derby futures pools on its board; they are not races on the
+    card (their 'post time' is Derby day months away) and must not be stored as races."""
+    day = "2026-11-26"
+    now = datetime(2026, 11, 26, 18, 0, tzinfo=timezone.utc)
+    tote = {"status": "open", "read_at": "2026-11-26T17:59:00Z", "runners": [{"number": 1, "name": "All Others", "win_odds": "5/1"}]}
+    futures = {"country": "US", "category": "horse", "race_number": 1, "venue": "KY Derby Sire Futures",
+               "post_time": "2027-05-02T06:59:00Z", "tote": tote}
+    assert board_race(futures, day, now) is None
+    far = dict(futures, venue="Churchill Downs", track_code="CD")  # any entry posting days away
+    assert board_race(far, day, now) is None
+    today = dict(far, post_time="2026-11-26T22:00:00Z")
+    assert board_race(today, day, now) is not None
+    late = dict(far, post_time="2026-11-27T03:30:00Z")  # evening card after midnight UTC still counts
+    assert board_race(late, day, now) is not None

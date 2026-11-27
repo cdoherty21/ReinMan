@@ -215,3 +215,17 @@ def test_free_pp_duplicate_original_is_idempotent(db):
     assert _writes(db, lambda: free_pp.save_document(db, "https://example.com/two.pdf", data, "application/pdf")) == 0
     assert db.scalar("SELECT COUNT(*) FROM documents") == 1
     assert db.scalar("SELECT COUNT(*) FROM document_file_chunks WHERE document_id=?", [first]) == 1
+
+
+def test_exclude_non_races_marks_futures_once(db):
+    post = _future(60)
+    day = post[:10]
+    ingest.store_card(db, _card(post, d=day), "puntersedge")
+    futures = _card("2027-05-02T06:59:00.000Z", track="KY_DERBY_SIRE_FUTURES", d=day)
+    ingest.store_card(db, futures, "puntersedge")
+    out = cli.exclude_non_races(db)
+    assert out["marked_not_a_race"] == [f"KY_DERBY_SIRE_FUTURES-{day.replace('-', '')}-1"]
+    assert db.scalar("SELECT COUNT(*) FROM races WHERE status='not_a_race' AND is_cancelled=1") == 1
+    assert db.scalar("SELECT status FROM races WHERE track_id='AQU'") == "scheduled"
+    assert db.scalar("SELECT COUNT(*) FROM races") == 2  # nothing deleted
+    assert _writes(db, lambda: cli.exclude_non_races(db)) == 0

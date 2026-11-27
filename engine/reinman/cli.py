@@ -356,6 +356,24 @@ def inspect_documents(db: Database, doc_id: int | None, grep: str | None, max_ch
     return {"id": doc_id, "filename": doc["filename"], "chars": len(text)}
 
 
+NOT_A_RACE = "not_a_race"
+
+
+def exclude_non_races(db: Database) -> dict:
+    """One-off data fix: board entries stored as races that are not races on a card
+    (futures pools, or anything posting more than 36 hours from its card day) are marked
+    status='not_a_race' and cancelled. Nothing is deleted. Idempotent: a second run
+    writes nothing."""
+    rows = db.query(
+        "SELECT race_id, race_date, post_time FROM races WHERE status != ? AND ("
+        "UPPER(race_id) LIKE '%FUTURE%' OR UPPER(track_id) LIKE '%FUTURE%' OR "
+        "(post_time IS NOT NULL AND ABS(julianday(post_time) - julianday(race_date || 'T12:00:00Z')) > 1.5))",
+        [NOT_A_RACE])
+    for r in rows:
+        db.execute("UPDATE races SET status=?, is_cancelled=1 WHERE race_id=?", [NOT_A_RACE, r["race_id"]])
+    return {"marked_not_a_race": [r["race_id"] for r in rows]}
+
+
 def canonicalize_people(db: Database) -> dict:
     """One-time repair: rewrite stored jockey/trainer ids from their names with the same
     rule ingest now uses (``util.person_key``), so one person has one id everywhere."""
@@ -447,6 +465,7 @@ def main(argv=None) -> int:
         "free-pp-collect": lambda: bulk(db, "free-pp-collect", lambda: job(db, "free_pp_collect", free_pp.collect, db, quiet=True)),
         "stables-refresh": lambda: guarded(db, "stables", 20, False, lambda: stables.refresh(db)),
         "news": lambda: job(db, "news", news.refresh, db),
+        "exclude-non-races": lambda: job(db, "exclude_non_races", exclude_non_races, db),
         "canonicalize-people": lambda: bulk(db, "canonicalize-people",
                                             lambda: job(db, "canonicalize_people", canonicalize_people, db)),
         "daily": lambda: guarded(db, "daily_cycle", 12, a.force, lambda: daily(db)),

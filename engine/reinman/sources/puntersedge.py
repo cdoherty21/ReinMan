@@ -30,8 +30,17 @@ def track_code(row: dict) -> str:
     return canonical_track_code(venue, raw) or name.replace(" ", "_")
 
 
+def is_futures(row: dict) -> bool:
+    """Futures pools (Kentucky Derby, Oaks, sire futures...) sit on the tote board but are
+    not races on a card."""
+    text = norm_name(" ".join(str(row.get(k) or "") for k in ("venue", "venue_canonical", "track_code", "race_name")))
+    return "FUTURE" in text
+
+
 def eligible(row: dict, details: dict) -> bool:
     if row.get("country") != "US" or row.get("category") not in {"horse", "thoroughbred"}:
+        return False
+    if is_futures(row):
         return False
     breed = norm_name(details.get("breed") or row.get("breed"))
     conditions = norm_name(details.get("conditions"))
@@ -51,6 +60,11 @@ def board_race(row: dict, race_date: str, now: datetime) -> dict | None:
     tote = row.get("tote") or {}
     post = parse_post_time(race_date, row.get("post_time"))
     if not post or not track_code(row) or not eligible(row, tote):
+        return None
+    # A race posts on its card's day (an evening card can run past midnight UTC). Anything
+    # posting further away is not a race on this card.
+    card_day = datetime.fromisoformat(f"{race_date}T12:00:00+00:00")
+    if abs((parse_iso(post) - card_day).total_seconds()) > 36 * 3600:
         return None
     read_at = tote.get("read_at")
     fresh = (read_at and timedelta(0) <= now - parse_iso(read_at) <= timedelta(minutes=5)
