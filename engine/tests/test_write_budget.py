@@ -229,3 +229,10 @@ def test_exclude_non_races_marks_futures_once(db):
     assert db.scalar("SELECT status FROM races WHERE track_id='AQU'") == "scheduled"
     assert db.scalar("SELECT COUNT(*) FROM races") == 2  # nothing deleted
     assert _writes(db, lambda: cli.exclude_non_races(db)) == 0
+
+
+def test_exclude_non_races_runs_from_the_command_line(tmp_path, monkeypatch):
+    # The maintenance workflow runs `reinman exclude-non-races`; it must be a registered command.
+    path = tmp_path / "r.db"
+    assert cli.main(["--db", f"sqlite:///{path}", "init"]) == 0
+    assert cli.main(["--db", f"sqlite:///{path}", "exclude-non-races"]) == 0

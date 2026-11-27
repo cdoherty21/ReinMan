@@ -415,7 +415,8 @@ def main(argv=None) -> int:
     ap.add_argument("--db", help="sqlite:///path.db or d1 (default: $REINMAN_DB)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     for c in ("init", "monitor", "lock", "grade", "stats", "backtest", "documents-ready", "news",
-              "canonicalize-people", "d1-usage", "stables-refresh", "free-pp-collect"):
+              "canonicalize-people", "d1-usage", "stables-refresh", "free-pp-collect",
+              "exclude-non-races"):
         sub.add_parser(c)
     for c in ("daily", "train"):
         sub.add_parser(c).add_argument("--force", action="store_true", help="run even if it ran recently")
